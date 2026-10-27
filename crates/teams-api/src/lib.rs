@@ -300,6 +300,118 @@ impl RosterClient {
     }
 }
 
+/// People-search client (substrate suggestions).
+///
+/// **Base-URL exception**: every other service takes its base from the authz `regionGtms`
+/// map, but that map has no `substrate` entry (checked against all 112 live services,
+/// 2026-10-27) — the global `substrate.office.com` front door is therefore a documented
+/// constant exception, recorded in `docs/endpoints.md`.
+#[derive(Debug)]
+pub struct SubstrateClient {
+    http: reqwest::Client,
+    /// Fully-built suggestions URL (`…/suggestions?scenario=powerbar`).
+    suggestions_url: url::Url,
+    /// Never logged, never serialized, never exposed to the GUI.
+    bearer: String,
+}
+
+/// Documented constant exception to "base URLs are data": `regionGtms` has no
+/// `substrate` key, so the service is addressed by its well-known global host.
+pub const SUBSTRATE_BASE: &str = "https://substrate.office.com";
+
+/// The suggestions endpoint rejects requests without a Teams `Origin`/`Referer` (HTTP 400).
+const TEAMS_ORIGIN: &str = "https://teams.microsoft.com";
+
+/// Suggestions path; the `scenario` query parameter is required, not decorative.
+const SUGGESTIONS_PATH: &str = "search/api/v1/suggestions?scenario=powerbar";
+
+/// Directory fields requested for each suggestion. Live-verified set: one unknown field
+/// name makes the whole call fail with `Invalid field name specified.` (HTTP 400).
+const SUGGESTION_FIELDS: [&str; 6] =
+    ["Id", "MRI", "DisplayName", "EmailAddresses", "JobTitle", "Department"];
+
+impl SubstrateClient {
+    /// Build a client from a substrate bearer (minted for the `substrate` audience via
+    /// [`teams_auth::TokenCache::fresh_or_redeem`], scope `SCOPE_SUBSTRATE`).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Url`] when [`SUBSTRATE_BASE`] stops parsing,
+    /// [`ApiError::Http`] when the HTTP client cannot be built (invalid TLS roots).
+    pub fn new(bearer: impl Into<String>) -> Result<Self, ApiError> {
+        Ok(Self {
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent(USER_AGENT)
+                .build()?,
+            suggestions_url: url::Url::parse(&format!("{SUBSTRATE_BASE}/{SUGGESTIONS_PATH}"))?,
+            bearer: bearer.into(),
+        })
+    }
+
+    /// Search the directory for people (Phase 4 read path), typed.
+    ///
+    /// `POST https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar`
+    ///
+    /// The body carries two fresh correlation ids per call (`cvid`, `logicalId`) and one
+    /// `EntityRequests` entry of `EntityType: "People"`; the response is grouped by entity
+    /// type, so [`teams_protocol::SearchSuggestions::people`] is what a caller wants.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on non-2xx (400 = bad `Fields` entry, 401 = substrate bearer
+    /// expired → `teams-cli auth mint`), [`ApiError::Json`] on malformed JSON or an
+    /// unparseable typed shape, [`ApiError::Http`] on transport failure.
+    pub async fn search_people(
+        &self,
+        query: &str,
+        limit: u32,
+    ) -> Result<teams_protocol::SearchSuggestions, ApiError> {
+        let resp = self
+            .http
+            .post(self.suggestions_url.clone())
+            .bearer_auth(&self.bearer)
+            .header("Origin", TEAMS_ORIGIN)
+            .header("Referer", format!("{TEAMS_ORIGIN}/"))
+            .header("Accept", "application/json")
+            .json(&suggestions_body(query, limit))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let body = resp.text().await?;
+        if !status.is_success() {
+            // Never log the body verbatim: service errors can echo request context.
+            tracing::warn!(
+                status = status.as_u16(),
+                body_len = body.len(),
+                "substrate search error"
+            );
+            return Err(ApiError::Status {
+                status: status.as_u16(),
+                body: crate::truncate(&body, 300),
+            });
+        }
+        Ok(serde_json::from_str(&body)?)
+    }
+}
+
+/// Body of one suggestions call: correlation ids + the `EntityRequests` envelope.
+///
+/// Kept as a free function so the exact wire shape is unit-testable without a server.
+fn suggestions_body(query: &str, limit: u32) -> Value {
+    serde_json::json!({
+        "cvid": uuid::Uuid::new_v4().to_string(),
+        "logicalId": uuid::Uuid::new_v4().to_string(),
+        "EntityRequests": [{
+            "Query": {"QueryString": query, "DisplayQueryString": query},
+            "EntityType": "People",
+            "Size": limit,
+            "Fields": SUGGESTION_FIELDS,
+        }],
+    })
+}
+
 /// Parse a service base URL for `Url::join`-based path building.
 ///
 /// Drops query/fragment and guarantees a trailing `/` on the path: the CSA base ends in a
@@ -478,6 +590,50 @@ mod tests {
         assert_eq!(
             message_path(conv, "1700000000001"),
             "v1/users/ME/conversations/19:meeting_x%3Fy@thread.v2/messages/1700000000001"
+        );
+    }
+
+    /// The body shape was probed live (2026-10-27): a missing `EntityRequests` fails with
+    /// `ArgumentNullException`, an unknown `Fields` entry with `Invalid field name specified.`
+    #[test]
+    fn suggestions_body_matches_the_live_shape() {
+        let body = suggestions_body("ken", 5);
+        let requests =
+            body.get("EntityRequests").and_then(Value::as_array).expect("EntityRequests array");
+        assert_eq!(requests.len(), 1, "one entity request per call");
+
+        let entry = &requests[0];
+        assert_eq!(entry["EntityType"], "People");
+        assert_eq!(entry["Size"], 5);
+        // The query is mirrored into the display copy — that is what the picker shows.
+        assert_eq!(entry["Query"]["QueryString"], "ken");
+        assert_eq!(entry["Query"]["DisplayQueryString"], "ken");
+
+        let fields = entry.get("Fields").and_then(Value::as_array).expect("Fields array").clone();
+        let fields: Vec<&str> =
+            fields.iter().map(Value::as_str).collect::<Option<Vec<_>>>().unwrap();
+        assert_eq!(fields, SUGGESTION_FIELDS);
+    }
+
+    /// `cvid`/`logicalId` are per-request correlation ids: fresh `UUIDv4` on every call.
+    #[test]
+    fn suggestions_body_mints_fresh_uuid_correlation_ids() {
+        let first = suggestions_body("x", 1);
+        let second = suggestions_body("x", 1);
+        let cvid = first["cvid"].as_str().expect("cvid is a string");
+
+        assert_eq!(cvid.len(), 36, "canonical UUID length");
+        assert_eq!(&cvid[14..15], "4", "UUIDv4 version nibble");
+        assert_ne!(first["cvid"], second["cvid"], "never reused between calls");
+        assert_ne!(first["logicalId"], second["logicalId"]);
+    }
+
+    #[test]
+    fn suggestions_url_keeps_the_required_scenario() {
+        let client = SubstrateClient::new("jwt").expect("client");
+        assert_eq!(
+            client.suggestions_url.as_str(),
+            "https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar"
         );
     }
 }

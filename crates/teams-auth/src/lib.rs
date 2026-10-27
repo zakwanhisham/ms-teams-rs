@@ -57,6 +57,15 @@ pub const AUDIENCE_CSA: &str = "chatsvcagg";
 /// Same family-refresh-token redemption as `SCOPE_SPACES`; live-verified 2026-10-27.
 pub const SCOPE_CSA: &str = "openid offline_access https://chatsvcagg.teams.microsoft.com/.default";
 
+/// Audience label used for the substrate (search / people profile) token.
+pub const AUDIENCE_SUBSTRATE: &str = "substrate";
+
+/// Scope that mints a bearer for `https://substrate.office.com` (people search).
+///
+/// Live-verified 2026-10-27: the FRT redeems it and the resulting token carries
+/// `SubstrateSearch-Internal.ReadWrite` among its scopes.
+pub const SCOPE_SUBSTRATE: &str = "openid offline_access https://substrate.office.com/.default";
+
 /// Refresh tokens can be redeemed slightly before actual expiry.
 pub const EXPIRY_SKEW_SECS: i64 = 300;
 

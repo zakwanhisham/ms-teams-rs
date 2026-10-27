@@ -10,8 +10,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use teams_auth::{
-    AUDIENCE_CSA, AUDIENCE_SPACES, AuthzClient, AuthzSession, DeviceCodeClient, FOCI_CLIENT_ID,
-    SCOPE_CSA, SCOPE_SPACES, TokenCache, decode_claims, identity_from_claims,
+    AUDIENCE_CSA, AUDIENCE_SPACES, AUDIENCE_SUBSTRATE, AuthzClient, AuthzSession, DeviceCodeClient,
+    FOCI_CLIENT_ID, SCOPE_CSA, SCOPE_SPACES, SCOPE_SUBSTRATE, TokenCache, decode_claims,
+    identity_from_claims,
 };
 
 /// Unofficial Microsoft Teams client for Linux (headless).
@@ -66,6 +67,18 @@ enum Command {
     Roster {
         /// Write the response JSON to this path (contains team/channel names — only use
         /// paths under the gitignored docs/traces/, never commit the output)
+        #[arg(long)]
+        raw_out: Option<std::path::PathBuf>,
+    },
+    /// Search the directory for people via substrate (Phase 4 read path)
+    Search {
+        /// Query string (name, email or job title)
+        query: String,
+        /// Maximum number of suggestions to request
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+        /// Write the response JSON to this path (contains directory data — only use paths
+        /// under the gitignored docs/traces/, never commit the output)
         #[arg(long)]
         raw_out: Option<std::path::PathBuf>,
     },
@@ -175,6 +188,9 @@ async fn run(cli: &Cli) -> Result<()> {
             history(conv, *page_size, root.as_deref(), message.as_deref(), raw_out.as_deref()).await
         }
         Some(Command::Roster { raw_out }) => roster(raw_out.as_deref()).await,
+        Some(Command::Search { query, limit, raw_out }) => {
+            search_people(query, *limit, raw_out.as_deref()).await
+        }
     }
 }
 
@@ -234,6 +250,48 @@ async fn roster(raw_out: Option<&std::path::Path>) -> Result<()> {
     dump_raw(&serde_json::to_value(&roster)?, raw_out)?;
     print_roster_summary(&roster);
     Ok(())
+}
+
+/// `teams-cli search <query>` — people directory via substrate (Phase 4 read path).
+async fn search_people(query: &str, limit: u32, raw_out: Option<&std::path::Path>) -> Result<()> {
+    let mut cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+
+    // Bearer for the substrate audience, minted from the family refresh token on first use.
+    let bearer = cache
+        .fresh_or_redeem(AUDIENCE_SUBSTRATE, SCOPE_SUBSTRATE, "common")
+        .await
+        .context("minting substrate bearer")?;
+    cache.save().context("saving token cache")?;
+
+    let client = teams_api::SubstrateClient::new(bearer)?;
+    let hits = client.search_people(query, limit).await.context("searching people")?;
+    dump_raw(&serde_json::to_value(&hits)?, raw_out)?;
+    print_search_summary(&hits);
+    Ok(())
+}
+
+/// Directory hits at a glance. Values print to the user's own terminal only.
+fn print_search_summary(hits: &teams_protocol::SearchSuggestions) {
+    let people: Vec<&teams_protocol::PersonSuggestion> = hits.people().collect();
+    println!(
+        "{} suggestion(s) · best-match order: {}",
+        people.len(),
+        hits.best_match_order().len()
+    );
+    for hit in people {
+        let name = hit.display_name.as_deref().or(hit.text.as_deref()).unwrap_or("<unnamed>");
+        let mut segments: Vec<String> = vec![name.to_owned()];
+        segments.extend(
+            [hit.job_title.as_deref(), hit.department.as_deref(), hit.email()]
+                .into_iter()
+                .flatten()
+                .map(str::to_owned),
+        );
+        if !hit.property_hits.is_empty() {
+            segments.push(format!("matched {}", hit.property_hits.join(", ")));
+        }
+        println!("  {}", segments.join(" · "));
+    }
 }
 
 /// Teams, channels and upcoming chats at a glance. Values print to the user's own terminal.

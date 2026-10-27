@@ -142,12 +142,16 @@
       (`roster.json`) + 10 tests; `teams-cli roster` prints the summary. Teams arrive with
       **only their General channel**, the rest in the top-level `channels` array; `chats`
       doubles as the meeting list (join URLs).
-- [ ] **People/search**: `POST https://substrate.office.com/search/api/v1/suggestions`
-      (needs `Origin`/`Referer: https://teams.microsoft.com` else 400).
+- [x] **People/search**: `POST https://substrate.office.com/search/api/v1/suggestions`
+      (needs `Origin`/`Referer: https://teams.microsoft.com` else 400) — **verified live
+      2026-10-27**: `EntityRequests`/`People` body with `scenario=powerbar` returns real
+      directory hits; typed `SearchSuggestions` model + sanitized fixture +
+      `teams-cli search <q>`. Full request/response notes in `docs/endpoints.md`.
 - [~] Record **fixtures**: sanitized JSON samples for every endpoint into
       `crates/*/tests/fixtures/` — ✅ `conversations.json`, `messages.json`, `thread.json`,
-      `message.json`, `roster.json` landed with deserialization tests; every further
-      endpoint needs the same treatment (`tools/sanitize_fixture.py` generates them).
+      `message.json`, `roster.json`, `search.json` landed with deserialization tests;
+      every further endpoint needs the same treatment
+      (`tools/sanitize_fixture.py` generates them).
 - [x] **Capture tooling**: `tools/capture/teams_trace.py` (mitmproxy addon with JWT +
       credential redaction) + `tools/capture/README.md` scenario checklist.
 
@@ -246,7 +250,10 @@ work-account login ran through it (2026-10-27).**
       - [x] `roster()` (CSA) — typed `RosterUpdate`, **verified live** 2026-10-27;
             fixture `roster.json`. Bearer minted per audience via
             `TokenCache::fresh_or_redeem` (`teams-cli auth mint`).
-      - [ ] `search_people(q)` (substrate)
+      - [x] `search_people(q)` (substrate) — **verified live** 2026-10-27;
+            `SubstrateClient::search_people` + `teams-cli search <q>`, fixture `search.json`.
+            Substrate has no `regionGtms` entry, so its base URL is a documented constant
+            exception (`SUBSTRATE_BASE`).
 - [~] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
       correct auth header per service (`Authentication` vs `Authorization`) ✅, `ApiError`
       ✅; MS-CV correlation vectors, retries with jittered exponential backoff and

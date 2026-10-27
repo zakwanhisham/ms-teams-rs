@@ -38,6 +38,8 @@ base64 = "0.22"
 # Path-segment encoding for conversation ids (`:` `@` `;` are legal in the wire path,
 # but `?` `#` `%` would break URL parsing — see teams-api `encode_path_segment`).
 percent-encoding = "2"
+# Correlation ids on the wire: UUIDv4 for the substrate search body (`cvid`/`logicalId`).
+uuid = { version = "1", features = ["v4"] }
 
 # --- error handling / logging ---
 thiserror = "2"

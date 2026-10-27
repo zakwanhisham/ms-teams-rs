@@ -146,7 +146,7 @@ Subscribed resources (web client): `/v1/threads/ALL`, `/v1/users/ME/contacts/ALL
 | Op | Method + path | Audience | Status |
 |----|---------------|----------|--------|
 | Team/channel roster | `GET {csa}/api/v1/teams/users/me/updates?isPrefetch=false&enableMembershipSummary=true` | `chatsvcagg.teams.microsoft.com` | ✅ |
-| People search | `POST https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar` | `substrate.office.com` (needs `Origin`/`Referer`!) | ⬜ |
+| People search | `POST https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar` | `substrate.office.com` (needs `Origin`/`Referer`!) | ✅ |
 | Calendar view | `GET https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=&endDateTime=` | `graph.microsoft.com` | ⬜ |
 | Mail | `GET https://graph.microsoft.com/v1.0/me/messages` | `graph.microsoft.com` | ⬜ |
 | Profile | `GET https://graph.microsoft.com/v1.0/me` | `graph.microsoft.com` | ⬜ |
@@ -191,6 +191,57 @@ teams-cli roster --raw-out docs/traces/live-roster.json
   verified response) are carried as raw `Value` — no consumer yet.
 - `enableMembershipSummary=true` buys `membershipSummary` (total/user/admin/bot/muted
   counts) per team; without it the counts are absent.
+
+### People search (substrate) — verified live 2026-10-27
+
+Typed as `teams_protocol::SearchSuggestions`
+(fixture `crates/teams-protocol/tests/fixtures/search.json`), client
+`teams_api::SubstrateClient`.
+
+```bash
+teams-cli search ken --limit 5
+# mint on demand, cached under `substrate`; fixture source (gitignored):
+#   --raw-out docs/traces/live-search-people1.json
+```
+
+- **Base URL is a documented constant exception**: the authz `regionGtms` map has **no**
+  `substrate` entry (all 112 live service keys checked 2026-10-27; only
+  `substrateSyncS2S`/`search`/`peopleProfileService` exist), so the global
+  `https://substrate.office.com` front door is used — `teams_api::SUBSTRATE_BASE`. This is
+  the one base URL in `teams-api` that is *not* runtime data.
+- **Auth**: `Authorization: Bearer <jwt>` with `aud: https://substrate.office.com`, redeemed
+  from the family refresh token (scope
+  `openid offline_access https://substrate.office.com/.default`, cached as `substrate`).
+- **`Origin: https://teams.microsoft.com` and `Referer: https://teams.microsoft.com/` are
+  required**; without them the endpoint answers HTTP 400 regardless of body.
+- **Request body** (probed live — every rejected variant is listed below):
+
+  ```json
+  {"cvid": "<uuid4>", "logicalId": "<uuid4>",
+   "EntityRequests": [{"Query": {"QueryString": "ken", "DisplayQueryString": "ken"},
+                       "EntityType": "People", "Size": 5,
+                       "Fields": ["Id", "MRI", "DisplayName", "EmailAddresses",
+                                  "JobTitle", "Department"]}]}
+  ```
+
+  - `?scenario=powerbar` is required (GET without it → 400).
+  - Missing `EntityRequests` → HTTP 500 `System.ArgumentNullException: 'EntityRequests'`.
+  - Unknown name in `Fields` → HTTP 400 `Invalid field name specified.` — the field list
+    above is the live-verified set; anything else must be proven before adding it.
+  - Rejected alternatives: top-level `{Scenario, Query}` → 400 "POST message is missing or
+    not valid", `{"message": …}` (string or object) → 500, form-encoded → 415,
+    `GET ?query=` → 400.
+  - `cvid`/`logicalId` are fresh UUIDv4 per call (correlation only; no state observed).
+- **Response**: `{Groups: [{Suggestions: […], Type: "People"}], LayoutHints:
+  {BestMatchSuggestions: [{ReferenceId, Group}]}, Instrumentation: {TraceId}}`. Ordering for
+  the UI lives in `LayoutHints`, which *references* suggestions by `ReferenceId` instead of
+  inlining them — `SearchSuggestions::best_match_order()` maps it back.
+- **Suggestion fields observed**: `Id` (`<guid>@<tenant-guid>`), `MRI` (`8:orgid:<guid>`),
+  `DisplayName` and `Text` (same string), `QueryText` (the matched email), `EmailAddresses[]`,
+  `JobTitle`, `Department` (both optional), `PropertyHits[]` — enum-like matched properties
+  (`DisplayName`, `GivenName`, `proxy_email` observed) — and `ReferenceId`.
+- `Size` is an upper bound: a 10-sized request returned 3 hits in the verified tenant (it
+  never pads the group).
 
 ## Files (ASM)
 

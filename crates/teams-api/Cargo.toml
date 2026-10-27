@@ -17,6 +17,7 @@ tracing.workspace = true
 url.workspace = true
 percent-encoding.workspace = true
 chrono.workspace = true
+uuid.workspace = true
 teams-protocol.workspace = true
 teams-auth.workspace = true
 

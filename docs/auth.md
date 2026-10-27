@@ -105,7 +105,8 @@ Conclusions:
 - [x] `https://api.spaces.skype.com` (chat) — FRT redemption + authz exchange live
 - [x] `https://chatsvcagg.teams.microsoft.com` (CSA roster) — FRT redemption live
       (2026-10-27), `scp=user_impersonation`; consumed by `teams-cli roster`
-- [ ] `https://substrate.office.com` (search)
+- [x] `https://substrate.office.com` (search) — FRT redemption live (2026-10-27); the minted
+      token carries `SubstrateSearch-Internal.ReadWrite`; consumed by `teams-cli search`
 - [ ] `https://graph.microsoft.com` — ⚠️ blocked via device-code for this client (see above)
 - [ ] `go.trouter.io` (calls — needed by Phase 2B)
 - [ ] Rotation semantics: is the FRT rotated on refresh? what invalidates it?
