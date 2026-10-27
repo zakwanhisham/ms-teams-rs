@@ -12,6 +12,8 @@ publish.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+html5ever.workspace = true
+markup5ever_rcdom.workspace = true
 
 [lints]
 workspace = true

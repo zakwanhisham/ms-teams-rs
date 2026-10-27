@@ -53,6 +53,14 @@ clap = { version = "4", features = ["derive", "env"] }
 # --- time ---
 chrono = { version = "0.4", features = ["serde"] }
 
+# --- rich text ---
+# Teams message bodies arrive as HTML fragments (messagetype `RichText/Html`). html5ever
+# (servo/html5ever, the HTML5 reference parser) normalizes the misnesting Teams actually
+# sends (`p > ul`, `li > li`); rcdom is its Rc-based DOM. Versions must be paired:
+# markup5ever_rcdom 0.39 requires html5ever ^0.39.
+html5ever = "0.39"
+markup5ever_rcdom = "0.39"
+
 # --- testing ---
 # Mock HTTP server for client tests (Phase 3 "unit tests with mocked HTTP" and the
 # retry/401 paths of Phase 4).

@@ -13,6 +13,7 @@
 
 mod conversations;
 mod messages;
+pub mod richtext;
 mod roster;
 mod search;
 
@@ -21,6 +22,9 @@ pub use conversations::{
     ThreadProperties,
 };
 pub use messages::{Emotion, EmotionUser, Mention, Message, MessagePage, MessageProperties};
+pub use richtext::{
+    Block, Inline, ListItem, RichText, TableCell, TableRow, parse, parse_with_mentions,
+};
 pub use roster::{
     Channel, ChatMember, ChatSummary, MeetingInformation, MembershipSummary, PreviewMessage,
     RosterMetadata, RosterUpdate, Team,
