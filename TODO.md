@@ -159,6 +159,11 @@
 
 - [x] **Capture tooling ready** — `tools/capture/` (mitmproxy addon with redaction +
       scenario checklist). The scenarios below still need the account owner to perform them.
+- [ ] **Execute the close-out plan** — staged sequence, ownership, and explicit GO /
+      NO-GO criteria in [`docs/calls.md`](docs/calls.md) § "Plan to close this spike"
+      (stage 0 pipeline readiness + live probes → stage 1 owner capture session →
+      stages 2–5 analysis, integration, verdict). Stage 0's websocket-recording gap in
+      `tools/capture/teams_trace.py` must be fixed **before** any capture session.
 
 **Goal: within ~2 weeks, join one real 1:1 Teams call and one scheduled meeting from a
 headless Rust binary, with audio flowing both ways.** If this fails, the plan reverts to
