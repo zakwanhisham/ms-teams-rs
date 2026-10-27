@@ -89,8 +89,37 @@ enum AuthAction {
     Logout,
 }
 
+/// `teams-cli … | head` closes our stdout early. Rust ignores SIGPIPE, so `println!`
+/// reports `EPIPE` by panicking — which would make an ordinary pipeline print a
+/// backtrace and exit 101. Turn that *one* case into a quiet exit; real panics keep
+/// the default reporting.
+fn install_broken_pipe_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if is_broken_pipe(info.payload()) {
+            // The reader chose to stop reading; nothing left to do. Exit 0 so `set -e`
+            // pipelines don't see a failure the reader caused.
+            std::process::exit(0);
+        }
+        default_hook(info);
+    }));
+}
+
+/// True when a panic payload is the stdio "failed printing … Broken pipe" message.
+fn is_broken_pipe(payload: &(dyn std::any::Any + Send)) -> bool {
+    fn mentions_broken_pipe(message: &str) -> bool {
+        message.contains("Broken pipe")
+    }
+    payload.downcast_ref::<String>().is_some_and(|message| mentions_broken_pipe(message))
+        || payload
+            .downcast_ref::<&'static str>()
+            .is_some_and(|message| mentions_broken_pipe(message))
+}
+
 #[tokio::main]
 async fn main() {
+    install_broken_pipe_hook();
+
     let cli = Cli::parse();
 
     let level = match cli.verbose {
@@ -465,6 +494,18 @@ mod tests {
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn broken_pipe_panics_are_recognised() {
+        // The exact shape std's `println!` produces on EPIPE.
+        let owned = String::from("failed printing to stdout: Broken pipe (os error 32)");
+        assert!(is_broken_pipe(&owned));
+        assert!(is_broken_pipe(&"failed printing to stdout: Broken pipe (os error 32)"));
+
+        // Everything else must fall through to the default panic reporting.
+        assert!(!is_broken_pipe(&String::from("index out of bounds: the len is 3")));
+        assert!(!is_broken_pipe(&"assertion failed: left == right"));
     }
 
     #[test]
