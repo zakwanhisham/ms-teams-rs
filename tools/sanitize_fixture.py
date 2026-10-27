@@ -93,28 +93,53 @@ def sanitize_xml_body(raw: str) -> str:
     return XML_BODY_RE.sub(lambda m: ZERO_UUID if "-" in m.group(0) else "0", raw)
 
 
-def sanitize(obj, key=None, *, allow, array_limit, in_xml_body=False):
+# Leaves of an `Event/Call` body that carry personal data (names, e-mails, call times
+# and ids a mailbox or conversation could be identified from): tags are protocol
+# surface, values are not. Enum-like leaves (`callEventType`, `meetingType`, `type`)
+# keep their values — they are dialect, not context.
+XML_REDACT_LEAVES = ("displayName", "organizerUpn", "startTime", "endTime", "iCalUid",
+                     "exchangeId", "subject", "conversationUrl", "conversationStartTime")
+
+
+def sanitize_call_xml_body(raw: str) -> str:
+    """Keep the tag structure of an `Event/Call` body, zero identities, redact leaves."""
+    raw = sanitize_xml_body(raw)
+    for leaf in XML_REDACT_LEAVES:
+        raw = re.sub(
+            rf"(<{leaf}>)[^<]*(</{leaf}>)", r"\1<redacted>\2", raw, flags=re.IGNORECASE
+        )
+    return raw
+
+
+def sanitize(obj, key=None, *, allow, array_limit, in_xml_body=False, in_call_body=False):
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
+            message_type = str(obj.get("messagetype", ""))
             is_system_body = (
-                k == "content" and str(obj.get("messagetype", "")).startswith("ThreadActivity/")
+                k == "content" and message_type.startswith("ThreadActivity/")
             )
+            is_call_body = k == "content" and message_type == "Event/Call"
+            body_mode = is_system_body or is_call_body
             nested_limit = 0 if k in CURATED_LIST_KEYS else array_limit
             out[k] = sanitize(
-                v, k, allow=allow, array_limit=nested_limit, in_xml_body=is_system_body
+                v, k, allow=allow, array_limit=nested_limit,
+                in_xml_body=body_mode, in_call_body=is_call_body,
             )
         return out
 
     if isinstance(obj, list):
         items = obj if array_limit <= 0 else obj[:array_limit]
-        return [sanitize(v, key, allow=allow, array_limit=array_limit, in_xml_body=in_xml_body)
+        return [sanitize(v, key, allow=allow, array_limit=array_limit,
+                         in_xml_body=in_xml_body, in_call_body=in_call_body)
                 for v in items]
 
     if isinstance(obj, bool):
         return obj
 
     if isinstance(obj, str):
+        if in_call_body:
+            return sanitize_call_xml_body(obj)
         if in_xml_body:
             return sanitize_xml_body(obj)
         if key in allow or DIGITS_RE.fullmatch(obj):

@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::SyncMetadata;
+use crate::{SyncMetadata, events::EventMessage};
 
 /// Root of a messages page.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -166,7 +166,8 @@ pub struct Mention {
     /// Schema discriminator, e.g. `http://schema.skype.com/Mention`.
     #[serde(rename = "@type", default)]
     pub schema: Option<String>,
-    /// Character offset of the mention in the message body.
+    /// Cross-reference index of [`crate::richtext`] mention spans (`itemid` is **not**
+    /// a character offset — spans carry the same number; resolve by equality).
     #[serde(rename = "itemid", default)]
     pub item_id: Option<u64>,
     /// Mentioned user's MRI (`8:orgid:<guid>`).
@@ -214,6 +215,26 @@ pub struct EmotionUser {
     pub extra: Map<String, Value>,
 }
 
+/// How a message renders, classified from the wire's `messagetype` (grounded in the
+/// live corpus, see `docs/endpoints.md`: `RichText/Html`, `Event/Call`,
+/// `ThreadActivity/*`, `Text` all observed).
+#[derive(Debug, Clone, PartialEq)]
+pub enum MessageKind {
+    /// `messagetype: "Text"` — plain text.
+    PlainText,
+    /// `messagetype: "RichText/Html"` — the normal chat bubble. Inline images ride
+    /// this kind too (7 observed live: `amsreferences` + `blurHash`, an `<img>` body);
+    /// use [`Message::has_inline_media`] to distinguish them.
+    RichText,
+    /// `messagetype: "Event/Call"` — a call log; parse via [`Message::event_message`].
+    CallLog,
+    /// Server-generated activity (`ThreadActivity/*`, `SystemEvent*` — control
+    /// events, not chat bubbles).
+    System,
+    /// Anything else the service invents later — kept prominent rather than guessed.
+    Unknown,
+}
+
 impl Message {
     /// Parsed mentions. The wire ships them stringified, sometimes as a real array,
     /// and occasionally as something else entirely — anything unparseable yields `[]`
@@ -232,12 +253,15 @@ impl Message {
             .collect()
     }
 
-    /// `true` for server-generated activity messages (`ThreadActivity/*`,
-    /// `SystemEventMessage`) — these render as control events, not chat bubbles.
+    /// `true` for server-generated messages that render as control events rather
+    /// than chat bubbles: `ThreadActivity/*`, `SystemEvent*`, and `Event/Call`
+    /// call logs (all observed live).
     #[must_use]
     pub fn is_system(&self) -> bool {
         self.message_type.as_deref().is_some_and(|kind| {
-            kind.starts_with("ThreadActivity/") || kind.starts_with("SystemEvent")
+            kind.starts_with("ThreadActivity/")
+                || kind.starts_with("SystemEvent")
+                || kind.starts_with("Event/")
         })
     }
 
@@ -245,6 +269,49 @@ impl Message {
     #[must_use]
     pub fn is_edited(&self) -> bool {
         self.skype_edited_id.is_some()
+    }
+
+    /// Rendering kind of this message.
+    #[must_use]
+    pub fn kind(&self) -> MessageKind {
+        match self.message_type.as_deref() {
+            Some("Text") => MessageKind::PlainText,
+            Some("RichText/Html") => MessageKind::RichText,
+            Some("Event/Call") => MessageKind::CallLog,
+            Some(kind)
+                if kind.starts_with("ThreadActivity/") || kind.starts_with("SystemEvent") =>
+            {
+                MessageKind::System
+            }
+            _ => MessageKind::Unknown,
+        }
+    }
+
+    /// Attachments the AMS media service references (observed: image ids like
+    /// `0-jhb-…` on `RichText/Html` posts with a `blurHash` placeholder).
+    #[must_use]
+    pub fn ams_references(&self) -> Vec<String> {
+        match &self.ams_references {
+            Some(Value::Array(items)) => {
+                items.iter().filter_map(Value::as_str).map(str::to_owned).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// `true` when the body references inline media (image posts, live: 7 messages).
+    #[must_use]
+    pub fn has_inline_media(&self) -> bool {
+        !self.ams_references().is_empty()
+    }
+
+    /// Parsed call-log body, when this is an `Event/Call` message.
+    #[must_use]
+    pub fn event_message(&self) -> Option<EventMessage> {
+        if self.kind() != MessageKind::CallLog {
+            return None;
+        }
+        EventMessage::parse(self.content.as_deref()?)
     }
 
     /// `true` when a reply points at a different root message.
@@ -329,15 +396,31 @@ mod tests {
 
     #[test]
     fn classification_helpers() {
-        let msg = sample();
+        let mut msg = sample();
+        assert_eq!(msg.kind(), MessageKind::RichText);
         assert!(!msg.is_system());
         assert!(!msg.is_edited());
         assert!(!msg.is_reply());
 
-        let mut system = msg.clone();
-        system.message_type = Some("ThreadActivity/AddMember".into());
-        assert!(system.is_system());
+        msg.message_type = Some("ThreadActivity/AddMember".into());
+        assert!(msg.is_system());
+        assert_eq!(msg.kind(), MessageKind::System);
 
+        msg.message_type = Some("Text".into());
+        assert_eq!(msg.kind(), MessageKind::PlainText);
+
+        msg.message_type = Some("Event/Call".into());
+        assert_eq!(msg.kind(), MessageKind::CallLog);
+        // Non-call content yields no event model even when classified as CallLog.
+        assert!(msg.event_message().is_none());
+
+        msg.message_type = Some("MessageChannel/News".into());
+        assert_eq!(msg.kind(), MessageKind::Unknown);
+    }
+
+    #[test]
+    fn edited_and_reply_helpers() {
+        let msg = sample();
         let mut edited = msg.clone();
         edited.skype_edited_id = Some("123".into());
         assert!(edited.is_edited());
@@ -345,6 +428,44 @@ mod tests {
         let mut reply = msg.clone();
         reply.root_message_id = Some("1793058838818".into());
         assert!(reply.is_reply());
+    }
+
+    #[test]
+    fn ams_references_expose_inline_media() {
+        let mut msg = sample();
+        assert!(!msg.has_inline_media());
+        assert_eq!(msg.ams_references(), [] as [String; 0]);
+
+        msg.ams_references = Some(serde_json::json!(["0-jhb-d8-1e3baa1d0880f4d2ac3f004ec86cdf1"]));
+        assert_eq!(msg.ams_references().as_slice(), ["0-jhb-d8-1e3baa1d0880f4d2ac3f004ec86cdf1"]);
+        assert!(msg.has_inline_media());
+
+        // Old wire shapes sometimes ship a bare string; degrade to no references.
+        msg.ams_references = Some(serde_json::json!("0-jhb-d8-1e3baa1d0880f4d2ac3f004ec86cdf1"));
+        assert!(msg.ams_references().is_empty(), "string shape degrades to none");
+    }
+
+    #[test]
+    fn event_fixture_becomes_a_call_log() {
+        let page =
+            serde_json::from_str::<MessagePage>(include_str!("../tests/fixtures/event-call.json"))
+                .expect("Event/Call fixture must deserialize");
+        for message in &page.messages {
+            assert!(message.is_system());
+            assert_eq!(message.kind(), MessageKind::CallLog);
+            let event = message.event_message().expect("sanitized dialect must parse");
+            let names: Vec<Option<&str>> =
+                event.participants.iter().map(|p| p.display_name.as_deref()).collect();
+            assert!(names.iter().all(|name| *name == Some("<redacted>")), "sanitizer must hold");
+        }
+    }
+
+    #[test]
+    fn sender_fields_combine_into_a_user() {
+        let msg = sample();
+        let sender = crate::users::User::sender_of(&msg);
+        assert!(sender.mri.is_none(), "sample carries no from field");
+        assert_eq!(sender.display_name_or_placeholder(), "<unknown>");
     }
 
     #[test]

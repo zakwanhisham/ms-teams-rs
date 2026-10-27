@@ -12,16 +12,21 @@
 #![forbid(unsafe_code)]
 
 mod conversations;
+pub mod events;
 mod messages;
 pub mod richtext;
 mod roster;
 mod search;
+pub mod users;
 
 pub use conversations::{
     Conversation, ConversationList, ConversationProperties, MemberProperties, SyncMetadata,
     ThreadProperties,
 };
-pub use messages::{Emotion, EmotionUser, Mention, Message, MessagePage, MessageProperties};
+pub use events::{CallOccurrence, CallParticipant, EventMessage};
+pub use messages::{
+    Emotion, EmotionUser, Mention, Message, MessageKind, MessagePage, MessageProperties,
+};
 pub use richtext::{
     Block, Inline, ListItem, RichText, TableCell, TableRow, parse, parse_with_mentions,
 };

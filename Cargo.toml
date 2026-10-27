@@ -65,6 +65,9 @@ markup5ever_rcdom = "0.39"
 # Mock HTTP server for client tests (Phase 3 "unit tests with mocked HTTP" and the
 # retry/401 paths of Phase 4).
 wiremock = "0.6"
+# Snapshot tests over the sanitized wire fixtures (Phase 4). `json` only: the models
+# serialize via serde_json already, so no extra YAML machinery is pulled in.
+insta = { version = "1", features = ["json"] }
 
 # --- local storage ---
 rusqlite = { version = "0.37", features = ["bundled"] }
