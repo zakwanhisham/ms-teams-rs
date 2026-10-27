@@ -82,6 +82,10 @@ docs/                 auth, endpoints, architecture, calls research — keep in 
 - New endpoints require **both**: a note in `docs/endpoints.md` (method, URL
   construction, auth header, caveats) **and** a sanitized fixture under
   `crates/<crate>/tests/fixtures/` with a deserialization test.
+  Generate the fixture with `python3 tools/sanitize_fixture.py <raw> <fixture>` — it
+  applies the standing redaction policy (enum-like keys kept, digit-only ids kept,
+  ms-epoch numbers zeroed, arrays truncated, everything else `<redacted>`) and is
+  idempotent, so re-running it on a committed fixture changes nothing.
 - HTTP calls live in the relevant client crate, never in the GUI.
 - Commit style (Conventional-Commits-flavored, matching existing history):
   - Subject: `<scope>: <imperative summary>`, scope = crate or area
