@@ -48,6 +48,15 @@ pub const SCOPE_SPACES: &str = "openid offline_access https://api.spaces.skype.c
 /// Audience label used for the `api.spaces.skype.com` token in the cache.
 pub const AUDIENCE_SPACES: &str = "spaces.skype";
 
+/// Audience label used for the CSA (chat service aggregator / team roster) token.
+pub const AUDIENCE_CSA: &str = "chatsvcagg";
+
+/// Scope that mints a bearer for the CSA roster endpoints
+/// (`Authorization: Bearer …` on `teams.microsoft.com/api/csa/…`).
+///
+/// Same family-refresh-token redemption as `SCOPE_SPACES`; live-verified 2026-10-27.
+pub const SCOPE_CSA: &str = "openid offline_access https://chatsvcagg.teams.microsoft.com/.default";
+
 /// Refresh tokens can be redeemed slightly before actual expiry.
 pub const EXPIRY_SKEW_SECS: i64 = 300;
 

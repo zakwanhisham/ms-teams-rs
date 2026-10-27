@@ -57,7 +57,8 @@ Conclusions:
 | Token cache, `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` | ✅ | `token_cache.rs`; permissions covered by test |
 | authz exchange (both enterprise & consumer response shapes) | ✅ | `authz.rs`; live exchange succeeded, `regionGtms` map has 112 services |
 | Claim decoding (unverified, display only) | ✅ | `jwt.rs` |
-| CLI: `teams-cli auth login/status/authz/whoami/logout` | ✅ | never prints token values |
+| Per-audience mint (`TokenCache::fresh_or_redeem`) | ✅ | picks a cached FRT (audience's own → spaces → any), redeems it, caches under the new label; short-circuits without network while the cached token is fresh — covered by tests |
+| CLI: `teams-cli auth login/status/authz/mint/whoami/logout` | ✅ | never prints token values |
 
 ### Live findings (login 2026-10-27)
 

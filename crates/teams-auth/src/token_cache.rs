@@ -189,6 +189,55 @@ impl TokenCache {
     pub fn fresh_token(&self, audience: &str) -> Option<&TokenSet> {
         self.tokens.get(audience).filter(|t| !t.is_expired(crate::EXPIRY_SKEW_SECS))
     }
+
+    /// A refresh token to redeem when minting a token for `audience`.
+    ///
+    /// Preference order: the audience's own refresh token (a mint already happened once),
+    /// then the spaces token's — that is the one `auth login` always writes — then any
+    /// cached token. All of these are family refresh tokens (FOCI), so any of them can
+    /// redeem for another first-party audience.
+    #[must_use]
+    pub fn refresh_token_for(&self, audience: &str) -> Option<&str> {
+        let own = self.tokens.get(audience).and_then(|token| token.refresh_token.as_deref());
+        let preferred = own.or_else(|| {
+            self.tokens.get(crate::AUDIENCE_SPACES).and_then(|token| token.refresh_token.as_deref())
+        });
+        preferred.or_else(|| self.tokens.values().find_map(|token| token.refresh_token.as_deref()))
+    }
+
+    /// A usable access token for `audience`, redeeming a cached refresh token for `scope`
+    /// when the cached one is missing or expired, and caching the result under `audience`.
+    ///
+    /// This is the per-audience minting path (CSA roster, substrate, …): one device-code
+    /// sign-in yields a family refresh token that mints bearers for every first-party
+    /// audience. No network happens when the cached token is still fresh.
+    ///
+    /// # Errors
+    ///
+    /// [`AuthError::NoToken`] when no refresh token is cached anywhere, [`AuthError::Http`]
+    /// / [`AuthError::Identity`] when the identity platform rejects the redemption.
+    pub async fn fresh_or_redeem(
+        &mut self,
+        audience: &str,
+        scope: &str,
+        tenant: &str,
+    ) -> Result<String, AuthError> {
+        if let Some(token) = self.fresh_token(audience) {
+            return Ok(token.access_token.clone());
+        }
+
+        let refresh = self
+            .refresh_token_for(audience)
+            .map(str::to_owned)
+            .ok_or_else(|| AuthError::NoToken(audience.to_owned()))?;
+
+        let minted = crate::DeviceCodeClient::new(tenant, crate::FOCI_CLIENT_ID)
+            .refresh(&refresh, scope)
+            .await?;
+        let access = minted.access_token.clone();
+        self.put_token(audience, minted);
+        Ok(access)
+    }
 }
 
 #[cfg(test)]
@@ -276,5 +325,59 @@ mod tests {
         token.expires_in = 60; // inside the 300 s skew window
         cache.put_token("spaces.skype", token);
         assert!(cache.fresh_token("spaces.skype").is_none());
+    }
+
+    /// Preference: the audience's own FRT, then spaces, then any cached token.
+    #[test]
+    fn refresh_token_prefers_own_then_spaces_then_any() {
+        let mut cache = TokenCache::new();
+        // No tokens at all.
+        assert_eq!(cache.refresh_token_for("chatsvcagg"), None);
+
+        // Only an unrelated audience: any refresh token will do (all are family RTs).
+        let mut other = sample_token();
+        other.refresh_token = Some("other-frt".into());
+        cache.put_token("substrate", other);
+        assert_eq!(cache.refresh_token_for("chatsvcagg"), Some("other-frt"));
+
+        // Spaces present: preferred over an unrelated audience.
+        cache.put_token(crate::AUDIENCE_SPACES, sample_token());
+        assert_eq!(cache.refresh_token_for("chatsvcagg"), Some("frt"));
+
+        // The audience's own FRT wins once a mint has happened before.
+        let mut own = sample_token();
+        own.refresh_token = Some("own-frt".into());
+        cache.put_token("chatsvcagg", own);
+        assert_eq!(cache.refresh_token_for("chatsvcagg"), Some("own-frt"));
+    }
+
+    /// A still-fresh cached token must be returned without touching the network.
+    #[tokio::test]
+    async fn fresh_or_redeem_uses_cache_before_redeeming() {
+        let mut cache = TokenCache::new();
+        cache.put_token("chatsvcagg", sample_token());
+        // A scope/tenant pair that could never reach the identity platform without
+        // failing proves no redemption was attempted.
+        let access = cache
+            .fresh_or_redeem("chatsvcagg", "not a real scope", "not-a-tenant")
+            .await
+            .expect("fresh token short-circuits");
+        assert_eq!(access, "header.payload.signature");
+    }
+
+    /// Expired token + no refresh token anywhere → `NoToken`, not a network call.
+    #[tokio::test]
+    async fn fresh_or_redeem_without_refresh_token_is_notoken() {
+        let mut cache = TokenCache::new();
+        let mut expired = sample_token();
+        expired.expires_in = 1;
+        expired.refresh_token = None;
+        cache.put_token("chatsvcagg", expired);
+
+        let err = cache
+            .fresh_or_redeem("chatsvcagg", "s", "common")
+            .await
+            .expect_err("nothing to redeem");
+        assert!(matches!(err, AuthError::NoToken(audience) if audience == "chatsvcagg"));
     }
 }

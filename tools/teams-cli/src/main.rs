@@ -10,8 +10,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use teams_auth::{
-    AUDIENCE_SPACES, AuthzClient, AuthzSession, DeviceCodeClient, FOCI_CLIENT_ID, SCOPE_SPACES,
-    TokenCache, decode_claims, identity_from_claims,
+    AUDIENCE_CSA, AUDIENCE_SPACES, AuthzClient, AuthzSession, DeviceCodeClient, FOCI_CLIENT_ID,
+    SCOPE_CSA, SCOPE_SPACES, TokenCache, decode_claims, identity_from_claims,
 };
 
 /// Unofficial Microsoft Teams client for Linux (headless).
@@ -83,6 +83,18 @@ enum AuthAction {
     },
     /// (Re)run the authz exchange with the cached spaces token
     Authz,
+    /// Mint a bearer for another audience from the family refresh token
+    Mint {
+        /// Scope to redeem (`<resource>/.default` form); defaults to the CSA roster audience
+        #[arg(long)]
+        scope: Option<String>,
+        /// Cache label for the minted token; defaults to `chatsvcagg`
+        #[arg(long)]
+        audience: Option<String>,
+        /// Tenant path segment used for the redemption
+        #[arg(long, default_value = "common")]
+        tenant: String,
+    },
     /// Decode (unverified) claims of the cached spaces token
     Whoami,
     /// Delete the local token cache
@@ -329,6 +341,14 @@ async fn auth(action: &AuthAction, verbose: u8) -> Result<()> {
         AuthAction::Login { tenant, scope } => auth_login(tenant, scope.as_deref()).await,
         AuthAction::Status { all_services } => auth_status(*all_services || verbose > 0),
         AuthAction::Authz => auth_authz().await,
+        AuthAction::Mint { scope, audience, tenant } => {
+            auth_mint(
+                scope.as_deref().unwrap_or(SCOPE_CSA),
+                audience.as_deref().unwrap_or(AUDIENCE_CSA),
+                tenant,
+            )
+            .await
+        }
         AuthAction::Whoami => auth_whoami(),
         AuthAction::Logout => auth_logout(),
     }
@@ -409,6 +429,25 @@ async fn auth_authz() -> Result<()> {
     print_authz(&session);
     cache.authz = Some(session);
     cache.save().context("saving token cache")?;
+    Ok(())
+}
+
+/// `teams-cli auth mint` — redeem the cached family refresh token for another audience
+/// (per-audience bearer: CSA roster, substrate, …). Prints claims, never the token.
+async fn auth_mint(scope: &str, audience: &str, tenant: &str) -> Result<()> {
+    let mut cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let used_cache = cache.fresh_token(audience).is_some();
+
+    let access = cache.fresh_or_redeem(audience, scope, tenant).await.context("minting bearer")?;
+    cache.save().context("saving token cache")?;
+
+    let claims = decode_claims(&access).context("decoding minted access token claims")?;
+    let field =
+        |name: &str| claims.get(name).and_then(serde_json::Value::as_str).unwrap_or("-").to_owned();
+    let source = if used_cache { "cached" } else { "redeemed via refresh token" };
+    println!("{audience}: {source} · aud={} · scp={} · exp={}", field("aud"), field("scp"), {
+        claims.get("exp").and_then(serde_json::Value::as_i64).unwrap_or(0)
+    });
     Ok(())
 }
 
