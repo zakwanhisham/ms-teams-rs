@@ -103,6 +103,31 @@ impl ChatClient {
         Self::new(base, session.skype_token.clone())
     }
 
+    /// List messages of a conversation (Phase 4 read path), typed.
+    ///
+    /// `GET {base}/v1/users/ME/conversations/{conv}/messages?pageSize=N&startTime=0`
+    ///
+    /// `{conv}` keeps the wire's raw `:` `@` `;` (that is how the service writes its own
+    /// `messagesLink`); only path-breaking characters are percent-encoded.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on non-2xx (401 = skypetoken expired → re-run authz),
+    /// [`ApiError::Json`] on malformed JSON or an unparseable typed shape,
+    /// [`ApiError::Http`] on transport failure.
+    pub async fn list_messages(
+        &self,
+        conv: &str,
+        page_size: u32,
+    ) -> Result<teams_protocol::MessagePage, ApiError> {
+        let path = format!(
+            "v1/users/ME/conversations/{}/messages?pageSize={page_size}&startTime=0",
+            encode_path_segment(conv)
+        );
+        let value = self.get(&path).await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// `GET {base}/{path}` with the skypetoken header, returning parsed JSON.
     async fn get(&self, path: &str) -> Result<Value, ApiError> {
         let url = self.base.join(path)?;
@@ -149,6 +174,33 @@ impl ChatClient {
     }
 }
 
+/// Percent-encode one path segment.
+///
+/// The chat service puts conversation ids into paths **raw** — its own `messagesLink`
+/// values contain literal `:` `@` `;` (verified live 2026-10-27) — so those are left
+/// untouched. Everything that would actually break URL parsing (path separators, `?`,
+/// `#`, `%`, controls) is encoded.
+pub(crate) fn encode_path_segment(segment: &str) -> String {
+    use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
+
+    /// URL path-segment set (` `, `"`, `#`, `<`, `>`, `?`, `` ` ``, `{`, `}`, `/`, `\`)
+    /// plus `%` so an id can never be double-decoded.
+    const SEGMENT: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'#')
+        .add(b'<')
+        .add(b'>')
+        .add(b'?')
+        .add(b'`')
+        .add(b'{')
+        .add(b'}')
+        .add(b'/')
+        .add(b'\\')
+        .add(b'%');
+    percent_encode(segment.as_bytes(), SEGMENT).to_string()
+}
+
 /// Truncate a string to `max` characters, appending an ellipsis marker.
 pub(crate) fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
@@ -179,5 +231,24 @@ mod tests {
     fn truncate_respects_boundaries() {
         assert_eq!(truncate("short", 300), "short");
         assert!(truncate("héllo wörld", 5).ends_with('…'));
+    }
+
+    #[test]
+    fn conversation_ids_keep_wire_safe_characters() {
+        // Matches the service's own `messagesLink` formatting.
+        let id = "19:3Vh2-xiNZrPlFoEx2yicJiUhP5BTvscVMP_EJW4ASrk1@thread.tacv2";
+        assert_eq!(encode_path_segment(id), id);
+        assert_eq!(
+            encode_path_segment("19:meeting_abc;def@thread.v2"),
+            "19:meeting_abc;def@thread.v2"
+        );
+    }
+
+    #[test]
+    fn path_breaking_characters_are_encoded() {
+        assert_eq!(encode_path_segment("a?b#c"), "a%3Fb%23c");
+        assert_eq!(encode_path_segment("a b"), "a%20b");
+        assert_eq!(encode_path_segment("50%off"), "50%25off");
+        assert_eq!(encode_path_segment("a/b"), "a%2Fb");
     }
 }

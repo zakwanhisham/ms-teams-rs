@@ -43,6 +43,19 @@ enum Command {
         #[arg(long)]
         raw_out: Option<std::path::PathBuf>,
     },
+    /// List the messages of one conversation (Phase 4 read path)
+    History {
+        /// Conversation id, exactly as printed by `teams-cli conversations`
+        #[arg(long)]
+        conv: String,
+        /// Page size for the messages page
+        #[arg(long, default_value_t = 10)]
+        page_size: u32,
+        /// Write the response JSON to this path (contains message data — only use paths
+        /// under the gitignored docs/traces/, never commit the output)
+        #[arg(long)]
+        raw_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -104,6 +117,80 @@ async fn run(cli: &Cli) -> Result<()> {
         Some(Command::Conversations { page_size, raw_out }) => {
             list_conversations(*page_size, raw_out.as_deref()).await
         }
+        Some(Command::History { conv, page_size, raw_out }) => {
+            list_messages(conv, *page_size, raw_out.as_deref()).await
+        }
+    }
+}
+
+/// `teams-cli history --conv <id>` — messages page for one conversation (Phase 4).
+async fn list_messages(
+    conv: &str,
+    page_size: u32,
+    raw_out: Option<&std::path::Path>,
+) -> Result<()> {
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
+
+    let client = teams_api::ChatClient::from_session(session)?;
+    let response = client.list_messages(conv, page_size).await.context("listing messages")?;
+
+    if let Some(path) = raw_out {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, serde_json::to_vec_pretty(&response)?)?;
+        eprintln!("response written to {} (do not commit)", path.display());
+    }
+
+    print_message_summary(&response);
+    Ok(())
+}
+
+/// Human-readable messages summary. Values print to the user's own terminal only.
+fn print_message_summary(page: &teams_protocol::MessagePage) {
+    let backward = if page.metadata.sync_state.is_some() {
+        "older history available"
+    } else {
+        "start of history"
+    };
+    println!(
+        "{} messages ({backward}, tenant present: {})",
+        page.messages.len(),
+        page.tenant_id.is_some()
+    );
+    for msg in &page.messages {
+        let kind = msg.message_type.as_deref().unwrap_or("-");
+        let when = msg.original_arrival_time.as_deref().unwrap_or("-");
+        let who = msg.im_display_name.as_deref().unwrap_or("<unknown>");
+        let mut marks = String::new();
+        if msg.is_system() {
+            marks.push_str(" [system]");
+        }
+        if msg.is_edited() {
+            marks.push_str(" [edited]");
+        }
+        if msg.is_reply() {
+            marks.push_str(" [reply]");
+        }
+        let reactions: Vec<String> = msg.emotions().into_iter().map(|e| e.key).collect();
+        let reactions = if reactions.is_empty() {
+            String::new()
+        } else {
+            format!(" · reactions={}", reactions.join(","))
+        };
+        let mentions = msg.mentions().len();
+        println!(
+            "  seq={:<6} {kind} · {when} · {who}{marks}{reactions}",
+            msg.sequence_id.unwrap_or(0)
+        );
+        println!(
+            "           id={} · root={} · mentions={} · content {} chars",
+            msg.id,
+            msg.root_message_id.as_deref().unwrap_or("-"),
+            mentions,
+            msg.content.as_deref().map_or(0, str::len)
+        );
     }
 }
 

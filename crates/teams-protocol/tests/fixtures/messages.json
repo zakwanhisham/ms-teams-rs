@@ -1,0 +1,131 @@
+{
+  "_metadata": {
+    "backwardLink": "<redacted>",
+    "lastCompleteSegmentEndTime": 0,
+    "lastCompleteSegmentStartTime": 0,
+    "syncState": "<redacted>"
+  },
+  "messages": [
+    {
+      "amsreferences": [],
+      "annotationsSummary": {
+        "emotions": {
+          "1f389_partypopper": 6,
+          "follow": 1,
+          "like": 1
+        }
+      },
+      "clientmessageid": "861941555898454098",
+      "composetime": "<redacted>",
+      "content": "<redacted>",
+      "contenttype": "Text",
+      "conversationLink": "<redacted>",
+      "conversationid": "<redacted>",
+      "from": "<redacted>",
+      "fromDisplayNameInToken": "<redacted>",
+      "fromFamilyNameInToken": "<redacted>",
+      "fromGivenNameInToken": "<redacted>",
+      "id": "1792373371819",
+      "imdisplayname": "<redacted>",
+      "messagetype": "RichText/Html",
+      "originalarrivaltime": "<redacted>",
+      "postType": "Standard",
+      "properties": {
+        "cards": "[]",
+        "deltaEmotions": [
+          {
+            "key": "1f389_partypopper",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "1792461166042"
+              }
+            ]
+          }
+        ],
+        "emotions": [
+          {
+            "key": "follow",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "0"
+              }
+            ]
+          },
+          {
+            "key": "1f389_partypopper",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "1792373414950"
+              },
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "1792374025449"
+              }
+            ]
+          }
+        ],
+        "files": "[]",
+        "formatVariant": "TEAMS",
+        "languageStamp": "<redacted>",
+        "links": "[]",
+        "mentions": "[{\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 0, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}, {\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 1, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}]",
+        "subject": "<redacted>"
+      },
+      "rootMessageId": "1792373371819",
+      "sequenceId": 730,
+      "type": "Message",
+      "version": "1792461166302"
+    },
+    {
+      "composetime": "<redacted>",
+      "content": "<addmember><target>8:orgid:00000000-0000-0000-0000-000000000000</target><eventtime>0</eventtime><rosterVersion>0</rosterVersion><lastRosterVersion>0</lastRosterVersion><initiator>8:orgid:00000000-0000-0000-0000-000000000000</initiator></addmember>",
+      "conversationLink": "<redacted>",
+      "conversationid": "<redacted>",
+      "from": "<redacted>",
+      "id": "1792474695557",
+      "messagetype": "ThreadActivity/AddMember",
+      "originalarrivaltime": "<redacted>",
+      "properties": {},
+      "rootMessageId": "1792474695557",
+      "sequenceId": 731,
+      "type": "Message",
+      "version": "1792474695557"
+    },
+    {
+      "clientmessageid": "2328258017212205390",
+      "composetime": "<redacted>",
+      "content": "<redacted>",
+      "contenttype": "Text",
+      "conversationLink": "<redacted>",
+      "conversationid": "<redacted>",
+      "from": "<redacted>",
+      "fromDisplayNameInToken": "<redacted>",
+      "fromFamilyNameInToken": "<redacted>",
+      "fromGivenNameInToken": "<redacted>",
+      "id": "1776215499330",
+      "imdisplayname": "<redacted>",
+      "messagetype": "RichText/Html",
+      "originalarrivaltime": "<redacted>",
+      "postType": "Standard",
+      "properties": {
+        "adminDelete": true,
+        "deletetime": 0,
+        "hardDeleteReason": "<redacted>",
+        "hardDeleteTime": 0
+      },
+      "rootMessageId": "1776215499330",
+      "sequenceId": 100,
+      "skypeeditedid": "2328258017212205390",
+      "type": "Message",
+      "version": "1778043007867"
+    }
+  ],
+  "tenantId": "<redacted>"
+}

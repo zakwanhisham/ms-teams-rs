@@ -12,7 +12,9 @@
   `https://<region>.ng.msg.teams.microsoft.com`) — **never hardcode a region**.
 - **Chat auth header**: `Authentication: skypetoken=<jwt>` (note: *not* `Authorization`).
 - **Bearer services**: `Authorization: Bearer <jwt>`, audience-specific token.
-- Conversation ids contain `:` `@` `;` → percent-encode them in paths.
+- Conversation ids contain `:` `@` `;` → the service writes them into paths **raw** (its
+  own `messagesLink` values do), so `teams-api` keeps them raw and percent-encodes only
+  path-breaking characters (`?` `#` `%` `/`, controls) — see `encode_path_segment`.
 - Always send MS-CV correlation vectors and a Teams-like User-Agent.
 - Response bodies in fixtures are sanitized.
 
@@ -21,7 +23,7 @@
 | Op | Method + path | Status |
 |----|---------------|--------|
 | List conversations | `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=0` | ✅ |
-| List messages | `GET /v1/users/ME/conversations/{conv}/messages?pageSize=N&startTime=1` | ⬜ |
+| List messages | `GET /v1/users/ME/conversations/{conv}/messages?pageSize=N&startTime=0` | ✅ |
 | Read one message | `GET /v1/users/ME/conversations/{conv}/messages/{id}` | ⬜ |
 | Read thread (root + replies) | `GET /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⬜ |
 | Post message | `POST /v1/users/ME/conversations/{conv}/messages` | ⬜ |
@@ -50,12 +52,46 @@ Notes:
     `Meeting`, `StreamOfNotifications`. `threadType` distinguishes `space` (uses
     `spaceThreadTopic`) from `topic` (channels, use `topic`).
   - Conversation ids vary by kind: `19:…@thread.tacv2`, `19:…@thread.skype`,
-    `19:meeting_…@thread.v2`, `48:notifications` — percent-encode in paths.
-  - `lastMessage` nests a full message preview (17 keys) incl. `messagetype`,
-    `originalarrivaltime`, `rootMessageId`, `sequenceId`.
+    `19:meeting_…@thread.v2`, `48:notifications` — sent raw in paths (see Conventions).
+  - `lastMessage` carries the same 17-key prefix of the messages-page `Message` type, so
+    both are modeled by `teams_protocol::Message`.
   - Stringified booleans (`favorite`, `collapsed`, `isemptyconversation`,
     `gapDetectionEnabled`, …) are strings, not JSON bools — `isReader`/`isCreator` *are*
     bools. Keep the wire type as observed.
+- **List messages — verified live 2026-10-27** (typed model:
+  `teams_protocol::MessagePage`, fixture `crates/teams-protocol/tests/fixtures/messages.json`).
+
+  ```bash
+  cargo run -q -p teams-cli -- history --conv '<id from `conversations`>' --page-size 10
+  # fixture source (gitignored): --raw-out docs/traces/live-messages.json
+  ```
+
+  Caveats found live:
+  - Same paging contract as the conversations page (`_metadata.syncState` +
+    `backwardLink`); this page carries `lastCompleteSegmentStartTime` /
+    `lastCompleteSegmentEndTime` instead of `forwardLink`/`totalCount`. Page order is
+    newest-first but not strictly monotonic — the thread root can appear inside a later
+    page than its replies. Never assume sorted order; sort by `sequenceId` if you need it.
+  - Root also carries `tenantId`.
+  - **`content` is polymorphic**: HTML for `RichText/Html`, plain text for `Text`, and a
+    separate XML dialect for `ThreadActivity/*` (e.g.
+    `<addmember><target>8:orgid:{guid}</target><eventtime>…</eventtime><rosterVersion>…`
+    `<initiator>28:app:{tenant}_{app}</initiator></addmember>`). System messages have no
+    `contenttype` and no `imdisplayname`.
+  - **`properties` is heterogeneous**: `mentions`/`cards`/`files`/`links` arrive as
+    *stringified* JSON (`"[{…}]"`, `"[]"`), `emotions`/`deltaEmotions` as real arrays,
+    flags as bools (`adminDelete`, `skipfanouttobots`) or strings. Typed accessors
+    (`Message::mentions`, `Message::emotions`) parse leniently and return `[]` rather
+    than failing the page; everything else lands in the property catch-all
+    (`deletetime`, `draftId`, `eventReason`, `subject`, …).
+  - Mention entry: `{"@type":"http://schema.skype.com/Mention","itemid":N,"mri":…,
+    "mentionType":"person","displayName":…}` — `itemid` is the character offset.
+  - Reaction entry: `{"key":"like"|"think"|<emoji-shortcode>,
+    "users":[{"mri","time"(<number>),"value"(<string>)}]}`; counts are mirrored in
+    `annotationsSummary.emotions` (an object, not stringified).
+  - Edit marker is `skypeeditedid` (equals `clientmessageid` of the edit); delete
+    bookkeeping lives in `properties.adminDelete`/`deletetime`/`hardDelete*`.
+  - `contenttype` casing is inconsistent (`Text` and `text` both observed).
 - Server message id comes from the `Location` response header on POST (last path segment),
   falling back to `OriginalArrivalTime`. Never use the echoed `clientmessageid`.
 - `properties` is **replaced**, not merged, on edit — re-send `properties.mentions`.

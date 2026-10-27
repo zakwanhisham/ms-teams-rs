@@ -24,7 +24,8 @@ pub struct ConversationList {
     pub extra: Map<String, Value>,
 }
 
-/// `_metadata` block: sync cursor for incremental fetches.
+/// `_metadata` block: sync cursor for incremental fetches. Shared by the conversations
+/// page and the messages page (which adds the segment-boundary timestamps).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SyncMetadata {
     /// Opaque cursor for fetching older pages, when present.
@@ -33,12 +34,19 @@ pub struct SyncMetadata {
     /// Cursor for newer pages; empty string means "no more" in observed traffic.
     #[serde(rename = "forwardLink", default)]
     pub forward_link: Option<String>,
-    /// Opaque sync state (479 chars observed) — pass back to resume pagination.
+    /// Opaque sync state (479 chars observed on the conversations page) — pass back to
+    /// resume pagination.
     #[serde(rename = "syncState", default)]
     pub sync_state: Option<String>,
     /// Number of items the service reports for this page.
     #[serde(rename = "totalCount", default)]
     pub total_count: Option<u64>,
+    /// End of the newest complete message segment (ms epoch); messages page only.
+    #[serde(rename = "lastCompleteSegmentEndTime", default)]
+    pub last_complete_segment_end_time: Option<u64>,
+    /// Start of the oldest complete message segment (ms epoch); messages page only.
+    #[serde(rename = "lastCompleteSegmentStartTime", default)]
+    pub last_complete_segment_start_time: Option<u64>,
     /// Unknown fields.
     #[serde(flatten, default)]
     pub extra: Map<String, Value>,
@@ -56,9 +64,9 @@ pub struct Conversation {
     /// Monotonic conversation version (ms-epoch-like `u64` observed).
     #[serde(default)]
     pub version: Option<u64>,
-    /// Preview of the newest message.
+    /// Preview of the newest message (same wire shape as the messages endpoint).
     #[serde(rename = "lastMessage", default)]
-    pub last_message: Option<MessagePreview>,
+    pub last_message: Option<crate::Message>,
     /// Read-receipt metadata version.
     #[serde(rename = "lastRcMetadataVersion", default)]
     pub last_rc_metadata_version: Option<u64>,
@@ -83,68 +91,6 @@ pub struct Conversation {
     /// Thread-level metadata (topic, thread type, group id, …).
     #[serde(rename = "threadProperties", default)]
     pub thread_properties: Option<ThreadProperties>,
-    /// Unknown fields.
-    #[serde(flatten, default)]
-    pub extra: Map<String, Value>,
-}
-
-/// Preview of the most recent message, embedded in [`Conversation`].
-///
-/// The wire nests sender info two ways (`from`/`imdisplayname` and the
-/// `*InToken` trio) — both are kept as observed.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct MessagePreview {
-    /// Server message id (13 chars observed — matches `OriginalArrivalTime`-style ids).
-    #[serde(default)]
-    pub id: String,
-    /// Client-generated id used for send de-duplication.
-    #[serde(rename = "clientmessageid", default)]
-    pub client_message_id: Option<String>,
-    /// Send time, RFC-3339-like (28 chars observed).
-    #[serde(rename = "composetime", default)]
-    pub compose_time: Option<String>,
-    /// Message body (may be empty for non-text previews).
-    #[serde(default)]
-    pub content: Option<String>,
-    /// Id of the conversation this preview belongs to.
-    #[serde(rename = "conversationid", default)]
-    pub conversation_id: Option<String>,
-    /// Absolute link to the conversation.
-    #[serde(rename = "conversationLink", default)]
-    pub conversation_link: Option<String>,
-    /// Sender identity (105 chars observed — likely a `8:orgid:`-style or URL identity).
-    #[serde(default)]
-    pub from: Option<String>,
-    /// Sender display name (from the auth token).
-    #[serde(rename = "fromDisplayNameInToken", default)]
-    pub from_display_name_in_token: Option<String>,
-    /// Sender family name (from the auth token).
-    #[serde(rename = "fromFamilyNameInToken", default)]
-    pub from_family_name_in_token: Option<String>,
-    /// Sender given name (from the auth token).
-    #[serde(rename = "fromGivenNameInToken", default)]
-    pub from_given_name_in_token: Option<String>,
-    /// Sender display name as shown in chat.
-    #[serde(rename = "imdisplayname", default)]
-    pub im_display_name: Option<String>,
-    /// Message type, e.g. `RichText/Html`.
-    #[serde(rename = "messagetype", default)]
-    pub message_type: Option<String>,
-    /// Arrival time, RFC-3339-like.
-    #[serde(rename = "originalarrivaltime", default)]
-    pub original_arrival_time: Option<String>,
-    /// Thread root id: equals `id` for roots, points at the root for replies.
-    #[serde(rename = "rootMessageId", default)]
-    pub root_message_id: Option<String>,
-    /// Ordering sequence within the conversation.
-    #[serde(rename = "sequenceId", default)]
-    pub sequence_id: Option<u64>,
-    /// Preview kind (7 chars observed).
-    #[serde(rename = "type", default)]
-    pub type_name: Option<String>,
-    /// Message version (13-char numeric string observed — kept as string).
-    #[serde(default)]
-    pub version: Option<String>,
     /// Unknown fields.
     #[serde(flatten, default)]
     pub extra: Map<String, Value>,

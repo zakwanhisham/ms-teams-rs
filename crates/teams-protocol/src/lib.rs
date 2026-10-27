@@ -12,11 +12,13 @@
 #![forbid(unsafe_code)]
 
 mod conversations;
+mod messages;
 
 pub use conversations::{
-    Conversation, ConversationList, ConversationProperties, MemberProperties, MessagePreview,
-    SyncMetadata, ThreadProperties,
+    Conversation, ConversationList, ConversationProperties, MemberProperties, SyncMetadata,
+    ThreadProperties,
 };
+pub use messages::{Emotion, EmotionUser, Mention, Message, MessagePage, MessageProperties};
 
 /// Placeholder so the crate has a symbol to document/test against.
 ///
