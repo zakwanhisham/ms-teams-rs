@@ -190,6 +190,28 @@ impl TokenCache {
         self.tokens.get(audience).filter(|t| !t.is_expired(crate::EXPIRY_SKEW_SECS))
     }
 
+    /// Forget the cached access token for `audience` while keeping its refresh token.
+    ///
+    /// This is the "evict" half of 401 recovery: a service may reject a credential that
+    /// still looks fresh locally (server-side revocation, clock skew), so the next mint
+    /// must redeem the family refresh token instead of reusing the rejected value. The
+    /// refresh token is deliberately kept — it *is* the means of re-minting, and for the
+    /// first-party audience it may be the only copy in the cache.
+    ///
+    /// Returns `true` when an access token was actually dropped.
+    #[must_use]
+    pub fn evict(&mut self, audience: &str) -> bool {
+        let Some(token) = self.tokens.get_mut(audience) else {
+            return false;
+        };
+        if token.access_token.is_empty() && token.obtained_at.is_none() {
+            return false; // already evicted
+        }
+        token.access_token = String::new();
+        token.obtained_at = None; // `TokenSet::is_expired` treats never-stamped as expired
+        true
+    }
+
     /// A refresh token to redeem when minting a token for `audience`.
     ///
     /// Preference order: the audience's own refresh token (a mint already happened once),
@@ -325,6 +347,36 @@ mod tests {
         token.expires_in = 60; // inside the 300 s skew window
         cache.put_token("spaces.skype", token);
         assert!(cache.fresh_token("spaces.skype").is_none());
+    }
+
+    /// 401 recovery: forget the rejected access token, keep the FRT that re-mints it.
+    #[test]
+    fn evict_drops_the_access_token_but_keeps_the_refresh_token() {
+        let mut cache = TokenCache::new();
+        cache.put_token("chatsvcagg", sample_token());
+
+        assert!(cache.evict("chatsvcagg"), "a live access token was dropped");
+        assert!(cache.fresh_token("chatsvcagg").is_none(), "must not be handed out again");
+        assert_eq!(
+            cache.refresh_token_for("chatsvcagg"),
+            Some("frt"),
+            "the family refresh token is the means of re-minting and must survive"
+        );
+
+        let evicted = cache.token("chatsvcagg").expect("entry still present");
+        assert!(evicted.access_token.is_empty(), "the rejected value is forgotten");
+        assert!(evicted.obtained_at.is_none(), "never-stamped reads as expired");
+
+        // Idempotent: a second evict has nothing left to drop.
+        assert!(!cache.evict("chatsvcagg"));
+    }
+
+    /// Evicting an audience that was never cached is a no-op, not a panic.
+    #[test]
+    fn evict_of_unknown_audience_reports_false() {
+        let mut cache = TokenCache::new();
+        assert!(!cache.evict("graph"));
+        assert!(cache.tokens.is_empty());
     }
 
     /// Preference: the audience's own FRT, then spaces, then any cached token.
