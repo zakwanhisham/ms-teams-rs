@@ -14,6 +14,7 @@
 mod conversations;
 mod messages;
 mod roster;
+mod search;
 
 pub use conversations::{
     Conversation, ConversationList, ConversationProperties, MemberProperties, SyncMetadata,
@@ -23,6 +24,10 @@ pub use messages::{Emotion, EmotionUser, Mention, Message, MessagePage, MessageP
 pub use roster::{
     Channel, ChatMember, ChatSummary, MeetingInformation, MembershipSummary, PreviewMessage,
     RosterMetadata, RosterUpdate, Team,
+};
+pub use search::{
+    BestMatchHint, LayoutHints, PersonSuggestion, SearchInstrumentation, SearchSuggestions,
+    SuggestionsGroup,
 };
 
 /// Placeholder so the crate has a symbol to document/test against.

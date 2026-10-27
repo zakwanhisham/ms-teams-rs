@@ -1,0 +1,55 @@
+{
+  "Groups": [
+    {
+      "Suggestions": [
+        {
+          "Id": "<redacted>",
+          "DisplayName": "<redacted>",
+          "EmailAddresses": [
+            "<redacted>"
+          ],
+          "JobTitle": "<redacted>",
+          "MRI": "<redacted>",
+          "Text": "<redacted>",
+          "QueryText": "<redacted>",
+          "PropertyHits": [
+            "DisplayName"
+          ],
+          "ReferenceId": "<redacted>"
+        },
+        {
+          "Id": "<redacted>",
+          "DisplayName": "<redacted>",
+          "EmailAddresses": [
+            "<redacted>"
+          ],
+          "Department": "<redacted>",
+          "JobTitle": "<redacted>",
+          "MRI": "<redacted>",
+          "Text": "<redacted>",
+          "QueryText": "<redacted>",
+          "PropertyHits": [
+            "proxy_email"
+          ],
+          "ReferenceId": "<redacted>"
+        }
+      ],
+      "Type": "People"
+    }
+  ],
+  "LayoutHints": {
+    "BestMatchSuggestions": [
+      {
+        "ReferenceId": "<redacted>",
+        "Group": "<redacted>"
+      },
+      {
+        "ReferenceId": "<redacted>",
+        "Group": "<redacted>"
+      }
+    ]
+  },
+  "Instrumentation": {
+    "TraceId": "<redacted>"
+  }
+}

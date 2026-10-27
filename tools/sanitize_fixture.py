@@ -7,6 +7,8 @@ applies the standing policy:
 
   * allowlisted *enum-like* keys keep their value verbatim
     (``type``, ``messagetype``, ``mentionType``, … — extend as you prove more endpoints);
+    for an array-valued key (``PropertyHits``) the *items* inherit the key, so the
+    enumerated values survive while a plain string array would be redacted;
   * digit-only strings are kept (server ids, versions, sequence numbers);
   * numbers with |value| >= 1e12 are zeroed (ms-epoch timestamps);
   * arrays are truncated to ``--array-limit`` items (0 = keep all);
@@ -53,6 +55,7 @@ DEFAULT_ALLOW = {
     "ongoingCallChatEnforcement",
     "postType",
     "productThreadType",
+    "PropertyHits",
     "role",
     "scenario",
     "spaceType",
@@ -60,6 +63,7 @@ DEFAULT_ALLOW = {
     "threadSubType",
     "threadType",
     "type",
+    "Type",
 }
 
 # Keys whose values are JSON *encoded as a string* rather than nested JSON.
