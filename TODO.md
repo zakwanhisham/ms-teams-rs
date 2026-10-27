@@ -37,7 +37,8 @@
       can blit `wgpu` textures into the widget tree cheaply before committing.
 - [ ] **WebRTC stack:** `str0m` (pure Rust, no OpenSSL) vs `webrtc-rs` vs FFI to libwebrtc.
       Decide in the Phase 2 spike — this is the single highest-risk dependency choice.
-- [ ] **Async runtime:** `tokio` (non-negotiable given reqwest + long-polling + WebRTC).
+- [x] **Async runtime:** `tokio` (non-negotiable given reqwest + long-polling + WebRTC) —
+      decided, already the workspace's runtime (reqwest, tests, ClI all built on it).
 - [~] **Local storage:** `rusqlite` (bundled SQLite) for the message cache — still open
       for Phase 5. Tokens ✅ decided: `CredentialStore` trait with the `0600` file store
       (default) + the OS keyring via Secret Service (`keyring-core` +
@@ -105,8 +106,10 @@
       - [~] Redeem FRT per-audience: `https://api.spaces.skype.com` ✅ **live**
             (FRT → spaces token → authz succeeded) and `chatsvcagg.teams.microsoft.com` ✅
             **live** (FRT → `aud=chatsvcagg`, `scp=user_impersonation`, feeds the CSA roster),
-            `substrate.office.com`, `graph.microsoft.com` (⚠️ device-code path blocked for
-            this client — open question), **`go.trouter.io`** (needed for calls).
+            `substrate.office.com` ✅ **live** (FRT → `aud=substrate` via
+            `TokenCache::fresh_or_redeem` + `SCOPE_SUBSTRATE`; the live people search used it),
+            `graph.microsoft.com` (⚠️ device-code path blocked for this client — open question
+            deferred to Phase 9), **`go.trouter.io`** (needed for calls — not yet redeemed).
       - [~] **authz exchange:** ✅ **live** (`region=apac`, `regionGtms` with 112 services,
             `chatService = https://apac.ng.msg.teams.microsoft.com`); code handles both known
             response shapes (`tokens.skypeToken` and consumer `skypeToken.skypetoken`).
@@ -130,8 +133,11 @@
       - [x] Conversation/channel id handling in paths (`:` `@` `;` are sent **raw** — the
             service's own `messagesLink` does); only path-breaking chars are encoded
             (`teams-api::encode_path_segment`, unit-tested).
-      - [ ] Message HTML wire format: code blocks, quotes, attachments, @everyone —
-            mentions are already parsed (`properties.mentions` → `Message::mentions()`).
+      - [~] Message HTML wire format: parsed into the `RichText` AST ✅ (Phase 4 — every
+            captured message parses; mentions/bold/links/lists/tables/emoticons/inline
+            images seen live; code/quotes/@everyone implemented but *not yet seen live*).
+            Remaining here: wire evidence only (attachments e.g. `AMSImageInfo` posting
+            flow) — rendering itself is Phase 6.
 - [ ] **Realtime events** — pick one and prove it with a packet capture:
       - [ ] *(A)* **HTTP long-poll**: register endpoint → `POST /v1/users/ME/endpoints/{id}/active`
             (keepalive ~45 s, `timeout: 12`) → subscribe `interestedResources`
