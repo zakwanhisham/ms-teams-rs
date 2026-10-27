@@ -16,9 +16,17 @@
 
 #![forbid(unsafe_code)]
 
-use std::time::Duration;
+mod mscv;
+mod retry;
+mod service;
+
+pub use mscv::{CorrelationVector, MS_CV_HEADER};
+pub use retry::{RetryPolicy, parse_retry_after};
+pub(crate) use service::HttpService;
 
 use serde_json::Value;
+
+use service::build_http_client;
 
 /// Chat service auth header name. Note: `Authentication`, **not** `Authorization`.
 pub const SKYPETOKEN_HEADER: &str = "Authentication";
@@ -62,10 +70,9 @@ pub enum ApiError {
 /// hardcoded — and every request carries `Authentication: skypetoken=<jwt>`.
 #[derive(Debug)]
 pub struct ChatClient {
-    http: reqwest::Client,
+    /// Shared plumbing: auth header, `MS-CV`, retries (credentials redacted in `Debug`).
+    service: HttpService,
     base: url::Url,
-    /// Never logged, never serialized, never exposed to the GUI.
-    skypetoken: String,
 }
 
 impl ChatClient {
@@ -77,13 +84,20 @@ impl ChatClient {
     /// [`ApiError::Http`] when the HTTP client cannot be built (invalid TLS roots).
     pub fn new(base_url: &str, skypetoken: impl Into<String>) -> Result<Self, ApiError> {
         Ok(Self {
-            http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .user_agent(USER_AGENT)
-                .build()?,
+            service: HttpService::new(
+                build_http_client()?,
+                (SKYPETOKEN_HEADER, format!("skypetoken={}", skypetoken.into())),
+                &[],
+            ),
             base: normalize_base(base_url)?,
-            skypetoken: skypetoken.into(),
         })
+    }
+
+    /// Override the retry schedule (short delays in tests, tuned backoff in production).
+    #[must_use]
+    pub fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.service = self.service.with_retry_policy(policy);
+        self
     }
 
     /// Build from a cached authz session: base URL from `regionGtms.chatService`, token
@@ -168,26 +182,7 @@ impl ChatClient {
 
     /// `GET {base}/{path}` with the skypetoken header, returning parsed JSON.
     async fn get(&self, path: &str) -> Result<Value, ApiError> {
-        let url = self.base.join(path)?;
-        let resp = self
-            .http
-            .get(url)
-            .header(SKYPETOKEN_HEADER, format!("skypetoken={}", self.skypetoken))
-            .header("Accept", "application/json")
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body = resp.text().await?;
-        if !status.is_success() {
-            // Never log the body verbatim here: service errors can echo request context.
-            tracing::warn!(status = status.as_u16(), body_len = body.len(), "chat service error");
-            return Err(ApiError::Status {
-                status: status.as_u16(),
-                body: crate::truncate(&body, 300),
-            });
-        }
-        Ok(serde_json::from_str(&body)?)
+        self.service.get_json(self.base.join(path)?).await
     }
 
     /// List conversations (both 1:1/group chats and team channels), typed.
@@ -216,10 +211,9 @@ impl ChatClient {
 /// not a skypetoken.
 #[derive(Debug)]
 pub struct RosterClient {
-    http: reqwest::Client,
+    /// Shared plumbing: auth header, `MS-CV`, retries (credentials redacted in `Debug`).
+    service: HttpService,
     base: url::Url,
-    /// Never logged, never serialized, never exposed to the GUI.
-    bearer: String,
 }
 
 impl RosterClient {
@@ -231,13 +225,20 @@ impl RosterClient {
     /// [`ApiError::Http`] when the HTTP client cannot be built (invalid TLS roots).
     pub fn new(base_url: &str, bearer: impl Into<String>) -> Result<Self, ApiError> {
         Ok(Self {
-            http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .user_agent(USER_AGENT)
-                .build()?,
+            service: HttpService::new(
+                build_http_client()?,
+                ("Authorization", format!("Bearer {}", bearer.into())),
+                &[],
+            ),
             base: normalize_base(base_url)?,
-            bearer: bearer.into(),
         })
+    }
+
+    /// Override the retry schedule (short delays in tests, tuned backoff in production).
+    #[must_use]
+    pub fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.service = self.service.with_retry_policy(policy);
+        self
     }
 
     /// Build from a cached authz session: base URL from `regionGtms.chatSvcAggAfd`, token
@@ -277,26 +278,7 @@ impl RosterClient {
 
     /// `GET {base}/{path}` with the CSA bearer, returning parsed JSON.
     async fn get(&self, path: &str) -> Result<Value, ApiError> {
-        let url = self.base.join(path)?;
-        let resp = self
-            .http
-            .get(url)
-            .header("Authorization", format!("Bearer {}", self.bearer))
-            .header("Accept", "application/json")
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body = resp.text().await?;
-        if !status.is_success() {
-            // Never log the body verbatim: service errors can echo request context.
-            tracing::warn!(status = status.as_u16(), body_len = body.len(), "CSA service error");
-            return Err(ApiError::Status {
-                status: status.as_u16(),
-                body: crate::truncate(&body, 300),
-            });
-        }
-        Ok(serde_json::from_str(&body)?)
+        self.service.get_json(self.base.join(path)?).await
     }
 }
 
@@ -308,11 +290,10 @@ impl RosterClient {
 /// constant exception, recorded in `docs/endpoints.md`.
 #[derive(Debug)]
 pub struct SubstrateClient {
-    http: reqwest::Client,
+    /// Shared plumbing: auth header, `Origin`/`Referer`, `MS-CV`, retries.
+    service: HttpService,
     /// Fully-built suggestions URL (`…/suggestions?scenario=powerbar`).
     suggestions_url: url::Url,
-    /// Never logged, never serialized, never exposed to the GUI.
-    bearer: String,
 }
 
 /// Documented constant exception to "base URLs are data": `regionGtms` has no
@@ -321,6 +302,10 @@ pub const SUBSTRATE_BASE: &str = "https://substrate.office.com";
 
 /// The suggestions endpoint rejects requests without a Teams `Origin`/`Referer` (HTTP 400).
 const TEAMS_ORIGIN: &str = "https://teams.microsoft.com";
+
+/// Static headers sent with every suggestions request.
+const SUGGESTIONS_HEADERS: &[(&str, &str)] =
+    &[("Origin", TEAMS_ORIGIN), ("Referer", "https://teams.microsoft.com/")];
 
 /// Suggestions path; the `scenario` query parameter is required, not decorative.
 const SUGGESTIONS_PATH: &str = "search/api/v1/suggestions?scenario=powerbar";
@@ -340,13 +325,20 @@ impl SubstrateClient {
     /// [`ApiError::Http`] when the HTTP client cannot be built (invalid TLS roots).
     pub fn new(bearer: impl Into<String>) -> Result<Self, ApiError> {
         Ok(Self {
-            http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .user_agent(USER_AGENT)
-                .build()?,
+            service: HttpService::new(
+                build_http_client()?,
+                ("Authorization", format!("Bearer {}", bearer.into())),
+                SUGGESTIONS_HEADERS,
+            ),
             suggestions_url: url::Url::parse(&format!("{SUBSTRATE_BASE}/{SUGGESTIONS_PATH}"))?,
-            bearer: bearer.into(),
         })
+    }
+
+    /// Override the retry schedule (short delays in tests, tuned backoff in production).
+    #[must_use]
+    pub fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.service = self.service.with_retry_policy(policy);
+        self
     }
 
     /// Search the directory for people (Phase 4 read path), typed.
@@ -367,32 +359,9 @@ impl SubstrateClient {
         query: &str,
         limit: u32,
     ) -> Result<teams_protocol::SearchSuggestions, ApiError> {
-        let resp = self
-            .http
-            .post(self.suggestions_url.clone())
-            .bearer_auth(&self.bearer)
-            .header("Origin", TEAMS_ORIGIN)
-            .header("Referer", format!("{TEAMS_ORIGIN}/"))
-            .header("Accept", "application/json")
-            .json(&suggestions_body(query, limit))
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body = resp.text().await?;
-        if !status.is_success() {
-            // Never log the body verbatim: service errors can echo request context.
-            tracing::warn!(
-                status = status.as_u16(),
-                body_len = body.len(),
-                "substrate search error"
-            );
-            return Err(ApiError::Status {
-                status: status.as_u16(),
-                body: crate::truncate(&body, 300),
-            });
-        }
-        Ok(serde_json::from_str(&body)?)
+        let body = suggestions_body(query, limit);
+        let value = self.service.post_json(self.suggestions_url.clone(), &body).await?;
+        Ok(serde_json::from_value(value)?)
     }
 }
 

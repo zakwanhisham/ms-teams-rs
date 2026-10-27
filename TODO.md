@@ -254,10 +254,15 @@ work-account login ran through it (2026-10-27).**
             `SubstrateClient::search_people` + `teams-cli search <q>`, fixture `search.json`.
             Substrate has no `regionGtms` entry, so its base URL is a documented constant
             exception (`SUBSTRATE_BASE`).
-- [~] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
+- [x] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
       correct auth header per service (`Authentication` vs `Authorization`) ✅, `ApiError`
-      ✅; MS-CV correlation vectors, retries with jittered exponential backoff and
-      429/`Retry-After` still open.
+      ✅; MS-CV correlation vectors ✅ (`CorrelationVector` — one per client, extension
+      incremented per attempt, live-verified: the chat service echoes it extended with
+      `.0`), jittered exponential backoff with 429/`Retry-After` ✅ (`RetryPolicy` in
+      `teams-api::service`, statuses 429/502/503/504, honouring `Retry-After` verbatim,
+      ±25 % jitter, overridable per client; mocked-HTTP tests in
+      `crates/teams-api/tests/retry.rs`). Transport errors are deliberately *not* retried
+      so the future write path cannot double-send.
 - [ ] HTML content model: parse Teams wire HTML → internal `RichText` AST (so the GUI can render
       it natively rather than embedding a webview). Crates: `scraper` or `html5ever` + custom walker.
       - [ ] mentions, bold/italic/underline/strike, links, code blocks, blockquote, lists,

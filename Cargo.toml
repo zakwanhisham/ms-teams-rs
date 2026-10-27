@@ -53,6 +53,11 @@ clap = { version = "4", features = ["derive", "env"] }
 # --- time ---
 chrono = { version = "0.4", features = ["serde"] }
 
+# --- testing ---
+# Mock HTTP server for client tests (Phase 3 "unit tests with mocked HTTP" and the
+# retry/401 paths of Phase 4).
+wiremock = "0.6"
+
 # --- local storage ---
 rusqlite = { version = "0.37", features = ["bundled"] }
 

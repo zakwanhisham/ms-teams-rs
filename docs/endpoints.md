@@ -17,7 +17,10 @@
 - Conversation ids contain `:` `@` `;` → the service writes them into paths **raw** (its
   own `messagesLink` values do), so `teams-api` keeps them raw and percent-encodes only
   path-breaking characters (`?` `#` `%` `/`, controls) — see `encode_path_segment`.
-- Always send MS-CV correlation vectors and a Teams-like User-Agent.
+- Always send MS-CV correlation vectors and a Teams-like User-Agent — both implemented in
+  `teams-api::HttpService` (one `CorrelationVector` per client, extension incremented per
+  attempt; the chat service echoes `MS-CV` extended with its own `.0` component, observed
+  live 2026-10-27) and used by every read path.
 - Response bodies in fixtures are sanitized.
 
 ## Chat service (IC3 / MSNP24)
