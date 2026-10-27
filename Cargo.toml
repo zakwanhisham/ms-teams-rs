@@ -52,17 +52,19 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 
 # --- desktop integration ---
 # Desktop D-Bus. Default features intentionally kept: they select the async runtime
-# integration and the crate does not build without one.
-zbus = "5"
+# integration and the crate does not build without one. v6 required: the v5 chain
+# (zvariant/zvariant_derive/zbus_names) is unmaintained per RUSTSEC-2026-0370/0371/0372.
+zbus = "6"
 
-# --- internal crates ---
-teams-protocol = { path = "crates/teams-protocol" }
-teams-auth = { path = "crates/teams-auth" }
-teams-api = { path = "crates/teams-api" }
-teams-realtime = { path = "crates/teams-realtime" }
-teams-call = { path = "crates/teams-call" }
-teams-store = { path = "crates/teams-store" }
-teams-notify = { path = "crates/teams-notify" }
+# --- internal crates (version must match workspace.package.version: keeps cargo-deny's
+#     wildcard-ban happy — a path-only dep resolves to `*`) ---
+teams-protocol = { version = "0.1.0", path = "crates/teams-protocol" }
+teams-auth = { version = "0.1.0", path = "crates/teams-auth" }
+teams-api = { version = "0.1.0", path = "crates/teams-api" }
+teams-realtime = { version = "0.1.0", path = "crates/teams-realtime" }
+teams-call = { version = "0.1.0", path = "crates/teams-call" }
+teams-store = { version = "0.1.0", path = "crates/teams-store" }
+teams-notify = { version = "0.1.0", path = "crates/teams-notify" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
