@@ -1,0 +1,86 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/teams-gui",
+    "crates/teams-api",
+    "crates/teams-auth",
+    "crates/teams-call",
+    "crates/teams-notify",
+    "crates/teams-protocol",
+    "crates/teams-realtime",
+    "crates/teams-store",
+    "tools/teams-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+authors = ["ms-teams-rs contributors"]
+description = "Unofficial native Microsoft Teams client for Linux"
+publish = false
+
+# Central version pinning. Only crates actually referenced by a member are resolved;
+# this table is the single place to bump versions.
+[workspace.dependencies]
+# --- async / runtime ---
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "net", "io-util"] }
+futures = "0.3"
+tokio-stream = "0.1"
+
+# --- http / serialization ---
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+
+# --- error handling / logging ---
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# --- cli ---
+clap = { version = "4", features = ["derive", "env"] }
+
+# --- time ---
+chrono = { version = "0.4", features = ["serde"] }
+
+# --- local storage ---
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+# --- desktop integration ---
+# Desktop D-Bus. Default features intentionally kept: they select the async runtime
+# integration and the crate does not build without one.
+zbus = "5"
+
+# --- internal crates ---
+teams-protocol = { path = "crates/teams-protocol" }
+teams-auth = { path = "crates/teams-auth" }
+teams-api = { path = "crates/teams-api" }
+teams-realtime = { path = "crates/teams-realtime" }
+teams-call = { path = "crates/teams-call" }
+teams-store = { path = "crates/teams-store" }
+teams-notify = { path = "crates/teams-notify" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Noisy pedantic lints we deliberately opt out of project-wide:
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.dev]
+# Keep build times sane despite the workspace.
+debug = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -1,0 +1,17 @@
+# Build artifacts
+/target/
+/dist/
+
+# Logs
+*.log
+
+# Local secrets / captured traces (never commit real tokens)
+.env
+*.jwt
+/docs/traces/
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store

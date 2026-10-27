@@ -1,0 +1,23 @@
+[package]
+name = "teams-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Typed HTTP clients for Teams chat (IC3), CSA roster, substrate search and Graph"
+publish.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+url.workspace = true
+chrono.workspace = true
+teams-protocol.workspace = true
+teams-auth.workspace = true
+
+[lints]
+workspace = true

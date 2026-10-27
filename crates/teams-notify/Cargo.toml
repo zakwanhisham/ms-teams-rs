@@ -1,0 +1,17 @@
+[package]
+name = "teams-notify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Linux desktop integration: notifications, tray, MPRIS, deep links"
+publish.workspace = true
+
+[dependencies]
+zbus.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

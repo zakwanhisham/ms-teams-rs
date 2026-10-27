@@ -1,0 +1,19 @@
+[package]
+name = "teams-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Local SQLite persistence for conversations, messages and the pending-send outbox"
+publish.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+teams-protocol.workspace = true
+
+[lints]
+workspace = true

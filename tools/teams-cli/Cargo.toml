@@ -1,0 +1,29 @@
+[package]
+name = "teams-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Headless Teams CLI for protocol exploration and integration tests"
+publish.workspace = true
+
+[[bin]]
+name = "teams-cli"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+teams-protocol.workspace = true
+teams-auth.workspace = true
+teams-api.workspace = true
+teams-realtime.workspace = true
+teams-call.workspace = true
+teams-store.workspace = true
+teams-notify.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "teams-call"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Teams audio/video calls: Trouter signalling, WebRTC media, device capture"
+publish.workspace = true
+
+[dependencies]
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+teams-auth.workspace = true
+teams-protocol.workspace = true
+teams-realtime.workspace = true
+
+[lints]
+workspace = true
