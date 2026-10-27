@@ -60,6 +60,11 @@ wiremock = "0.6"
 
 # --- local storage ---
 rusqlite = { version = "0.37", features = ["bundled"] }
+# OS keyring backend for the token cache (Phase 3 `CredentialStore`). `crypto-rust` =
+# pure-Rust Secret Service session encryption (the store always encrypts); `vendored` =
+# statically link libdbus so builds need no system development packages.
+keyring-core = "1.0"
+dbus-secret-service-keyring-store = { version = "1.0", features = ["crypto-rust", "vendored"] }
 
 # --- desktop integration ---
 # Desktop D-Bus. Default features intentionally kept: they select the async runtime

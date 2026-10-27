@@ -19,5 +19,10 @@ url.workspace = true
 chrono.workspace = true
 tokio.workspace = true
 
+# The keyring backend talks to the Secret Service over D-Bus (Linux desktop only).
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring-core.workspace = true
+dbus-secret-service-keyring-store.workspace = true
+
 [lints]
 workspace = true

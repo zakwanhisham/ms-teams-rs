@@ -212,7 +212,7 @@ async fn history(
     let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
     let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
     let client = teams_api::ChatClient::from_session(session)?
-        .with_refresher(teams_api::AuthzRefresher::new());
+        .with_refresher(teams_api::AuthzRefresher::new()?);
 
     if let Some(root) = root {
         let thread = client.get_thread(conv, root, page_size).await.context("fetching thread")?;
@@ -247,7 +247,7 @@ async fn roster(raw_out: Option<&std::path::Path>) -> Result<()> {
     cache.save().context("saving token cache")?;
 
     let client = teams_api::RosterClient::from_session(&session, bearer)?
-        .with_refresher(teams_api::AudienceRefresher::new(AUDIENCE_CSA, SCOPE_CSA));
+        .with_refresher(teams_api::AudienceRefresher::new(AUDIENCE_CSA, SCOPE_CSA)?);
     let roster = client.roster().await.context("fetching CSA roster")?;
     dump_raw(&serde_json::to_value(&roster)?, raw_out)?;
     print_roster_summary(&roster);
@@ -266,7 +266,7 @@ async fn search_people(query: &str, limit: u32, raw_out: Option<&std::path::Path
     cache.save().context("saving token cache")?;
 
     let client = teams_api::SubstrateClient::new(bearer)?
-        .with_refresher(teams_api::AudienceRefresher::new(AUDIENCE_SUBSTRATE, SCOPE_SUBSTRATE));
+        .with_refresher(teams_api::AudienceRefresher::new(AUDIENCE_SUBSTRATE, SCOPE_SUBSTRATE)?);
     let hits = client.search_people(query, limit).await.context("searching people")?;
     dump_raw(&serde_json::to_value(&hits)?, raw_out)?;
     print_search_summary(&hits);
@@ -431,7 +431,7 @@ async fn list_conversations(page_size: u32, raw_out: Option<&std::path::Path>) -
     let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
 
     let client = teams_api::ChatClient::from_session(session)?
-        .with_refresher(teams_api::AuthzRefresher::new());
+        .with_refresher(teams_api::AuthzRefresher::new()?);
     let response = client.list_conversations(page_size).await.context("listing conversations")?;
 
     if let Some(path) = raw_out {
@@ -502,7 +502,8 @@ async fn auth_login(tenant: &str, scope: Option<&str>) -> Result<()> {
     let claims = decode_claims(&tokens.access_token).context("decoding access token claims")?;
     let identity = identity_from_claims(&claims).context("reading identity from claims")?;
 
-    let mut cache = TokenCache::load()?.unwrap_or_else(TokenCache::new);
+    let store = teams_auth::default_store().context("selecting credential store")?;
+    let mut cache = TokenCache::load_store(&*store)?.unwrap_or_else(TokenCache::new);
     cache.identity = Some(identity.clone());
     cache.put_token(AUDIENCE_SPACES, tokens.clone());
 
@@ -514,20 +515,22 @@ async fn auth_login(tenant: &str, scope: Option<&str>) -> Result<()> {
         }
         Err(err) => eprintln!("warning: authz exchange failed (tokens are cached): {err:#}"),
     }
-    cache.save().context("saving token cache")?;
+    cache.save_store(&*store).context("saving token cache")?;
 
     println!("signed in{}", identity_suffix(&identity));
-    println!("token cache: {}", TokenCache::path().display());
+    println!("credentials: {}", store.describe());
     Ok(())
 }
 
 /// `teams-cli auth status` — cache state, expiry times, authz summary.
 fn auth_status(all_services: bool) -> Result<()> {
-    let Some(cache) = TokenCache::load()? else {
-        println!("not signed in (no cache at {})", TokenCache::path().display());
+    let store = teams_auth::default_store().context("selecting credential store")?;
+    let Some(cache) = TokenCache::load_store(&*store)? else {
+        println!("not signed in (no credentials in {})", store.describe());
         return Ok(());
     };
 
+    println!("store: {}", store.describe());
     match &cache.identity {
         Some(identity) => println!("signed in{}", identity_suffix(identity)),
         None => println!("no identity recorded"),
@@ -594,12 +597,13 @@ fn auth_whoami() -> Result<()> {
     Ok(())
 }
 
-/// `teams-cli auth logout` — delete the cache file.
+/// `teams-cli auth logout` — delete the credentials in the active store.
 fn auth_logout() -> Result<()> {
-    if TokenCache::clear()? {
-        println!("token cache removed");
+    let store = teams_auth::default_store().context("selecting credential store")?;
+    if TokenCache::clear_store(&*store)? {
+        println!("credentials removed from {}", store.describe());
     } else {
-        println!("no token cache to remove");
+        println!("no credentials to remove in {}", store.describe());
     }
     Ok(())
 }

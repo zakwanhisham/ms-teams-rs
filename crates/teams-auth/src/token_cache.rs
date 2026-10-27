@@ -1,15 +1,20 @@
-//! Persistent token cache with `0600` permissions under the XDG state directory.
+//! Persistent token cache, serialized as one JSON document behind a [`CredentialStore`].
 //!
-//! The public API comes in two flavours: [`TokenCache::load`]/[`TokenCache::save`] operate on
-//! the default XDG location, while [`TokenCache::load_from`]/[`TokenCache::save_to`] take an
-//! explicit path. Tests use the explicit variants so they never mutate process environment
-//! (`std::env::set_var` is unsafe in edition 2024 and this crate forbids unsafe code).
+//! The public API comes in three flavours: [`TokenCache::load`]/[`TokenCache::save`]/
+//! [`TokenCache::clear`] use the store selected by [`crate::default_store`] (the file
+//! store unless `TEAMS_RS_CREDENTIAL_STORE` says otherwise), the
+//! [`TokenCache::load_store`]/[`TokenCache::save_store`]/[`TokenCache::clear_store`]
+//! trio takes an explicit store, and [`TokenCache::load_from`]/[`TokenCache::save_to`]
+//! take an explicit path (always the file store — what tests use, so they never mutate
+//! process environment: `std::env::set_var` is unsafe in edition 2024 and this crate
+//! forbids unsafe code).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::store::{CredentialStore, FileStore, default_store};
 use crate::{AuthError, TokenSet};
 
 /// Current on-disk schema version (bump to invalidate old caches).
@@ -76,81 +81,89 @@ impl TokenCache {
         base.join("teams-rs").join("token-cache.json")
     }
 
-    /// Load from [`TokenCache::path`]; `Ok(None)` when the file does not exist yet.
+    /// Load from the store selected by [`crate::default_store`]; `Ok(None)` when nothing
+    /// is stored yet (signed out).
     ///
     /// # Errors
     ///
-    /// [`AuthError::Io`] for read failures other than "not found",
-    /// [`AuthError::Json`] when the file is corrupt.
+    /// [`AuthError::Io`] for file failures other than "not found", [`AuthError::Json`]
+    /// when the document is corrupt, [`AuthError::Store`] when the selected backend is
+    /// unavailable (e.g. `keyring` without a Secret Service daemon).
     pub fn load() -> Result<Option<Self>, AuthError> {
-        Self::load_from(&Self::path())
+        let store = default_store()?;
+        Self::load_store(&*store)
     }
 
-    /// Load from an explicit path (used by tests and alternative state locations).
+    /// Load from an explicit store.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`TokenCache::load`].
+    pub fn load_store(store: &dyn CredentialStore) -> Result<Option<Self>, AuthError> {
+        let Some(bytes) = store.read()? else {
+            return Ok(None);
+        };
+        Ok(Some(serde_json::from_slice(&bytes)?))
+    }
+
+    /// Load from an explicit file path (used by tests and alternative state locations).
     ///
     /// # Errors
     ///
     /// Same as [`TokenCache::load`].
     pub fn load_from(path: &Path) -> Result<Option<Self>, AuthError> {
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => return Err(AuthError::Io(err)),
-        };
-        Ok(Some(serde_json::from_slice(&bytes)?))
+        Self::load_store(&FileStore::new(path))
     }
 
-    /// Persist to [`TokenCache::path`] with mode `0600`.
+    /// Persist to the store selected by [`crate::default_store`].
     ///
     /// # Errors
     ///
-    /// [`AuthError::Io`] on filesystem failures, [`AuthError::Json`] on serialization.
+    /// [`AuthError::Io`] / [`AuthError::Store`] on backend failures, [`AuthError::Json`]
+    /// on serialization.
     pub fn save(&self) -> Result<(), AuthError> {
-        self.save_to(&Self::path())
+        let store = default_store()?;
+        self.save_store(&*store)
     }
 
-    /// Persist to an explicit path (parent directories are created).
+    /// Persist to an explicit store.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`TokenCache::save`].
+    pub fn save_store(&self, store: &dyn CredentialStore) -> Result<(), AuthError> {
+        let mut bytes = serde_json::to_vec_pretty(self)?;
+        bytes.push(b'\n');
+        store.write(&bytes)
+    }
+
+    /// Persist to an explicit file path (parent directories are created).
     ///
     /// # Errors
     ///
     /// Same as [`TokenCache::save`].
     pub fn save_to(&self, path: &Path) -> Result<(), AuthError> {
-        use std::io::Write;
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let mut bytes = serde_json::to_vec_pretty(self)?;
-        bytes.push(b'\n');
-
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        let mut file = opts.open(path)?;
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-
-        // Tighten permissions even when the file pre-existed with a wider mode.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        Ok(())
+        self.save_store(&FileStore::new(path))
     }
 
-    /// Delete [`TokenCache::path`]. Returns `true` when a file was removed.
+    /// Delete the credentials in the store selected by [`crate::default_store`].
+    /// Returns `true` when something was removed.
     ///
     /// # Errors
     ///
-    /// [`AuthError::Io`] on filesystem failures other than "not found".
+    /// [`AuthError::Io`] / [`AuthError::Store`] on backend failures.
     pub fn clear() -> Result<bool, AuthError> {
-        Self::clear_at(&Self::path())
+        let store = default_store()?;
+        Self::clear_store(&*store)
+    }
+
+    /// Delete the credentials in an explicit store.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`TokenCache::clear`].
+    pub fn clear_store(store: &dyn CredentialStore) -> Result<bool, AuthError> {
+        store.remove()
     }
 
     /// Delete an explicit cache file (used by tests).
@@ -159,11 +172,7 @@ impl TokenCache {
     ///
     /// Same as [`TokenCache::clear`].
     pub fn clear_at(path: &Path) -> Result<bool, AuthError> {
-        match std::fs::remove_file(path) {
-            Ok(()) => Ok(true),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(err) => Err(AuthError::Io(err)),
-        }
+        Self::clear_store(&FileStore::new(path))
     }
 
     /// Look up a token by audience label.

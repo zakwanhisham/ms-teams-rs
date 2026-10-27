@@ -4,8 +4,10 @@
 //!
 //! 1. **Device-code login** (`device_code` module) against the Teams FOCI public client
 //!    [`FOCI_CLIENT_ID`] yields an access token plus a family refresh token (FRT).
-//! 2. Tokens are persisted in `token_cache` at `$XDG_STATE_HOME/teams-rs/token-cache.json`
-//!    (mode `0600`), keyed by audience.
+//! 2. Tokens are persisted as one JSON document keyed by audience, behind the
+//!    [`CredentialStore`] trait: a `0600` file under `$XDG_STATE_HOME/teams-rs/` by
+//!    default, the OS keyring (Secret Service) when `TEAMS_RS_CREDENTIAL_STORE=keyring`
+//!    — see the `store` module for the backend decision.
 //! 3. `authz` exchanges the `api.spaces.skype.com` bearer token for a **skypetoken**
 //!    plus the `region` / `regionGtms` service map.
 //!
@@ -24,11 +26,15 @@
 mod authz;
 mod device_code;
 mod jwt;
+mod store;
 mod token_cache;
 
 pub use authz::{AuthzClient, AuthzSession};
 pub use device_code::{DeviceCodeClient, DeviceCodeRequest, TokenSet};
 pub use jwt::{decode_claims, identity_from_claims};
+#[cfg(target_os = "linux")]
+pub use store::KeyringStore;
+pub use store::{CredentialStore, FileStore, STORE_ENV, default_store, store_for};
 pub use token_cache::{CachedIdentity, TokenCache};
 
 /// The Microsoft first-party client id used by the Teams clients (FOCI family).
@@ -108,6 +114,10 @@ pub enum AuthError {
     /// Token cache could not be read/written.
     #[error("token cache io: {0}")]
     Io(#[from] std::io::Error),
+
+    /// The credential store (OS keyring) failed, or store selection was invalid.
+    #[error("credential store: {0}")]
+    Store(String),
 
     /// JSON (de)serialization failure.
     #[error("json error: {0}")]

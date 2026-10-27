@@ -8,15 +8,18 @@
 //!
 //! The bound lives in the HTTP layer: one `refreshed` flag per logical request, so a
 //! service that keeps answering 401 surfaces the error instead of looping. The refreshers
-//! below work from the on-disk [`teams_auth::TokenCache`]: each call **reloads the cache
-//! from disk** (no lock is ever held across the await) and persists the re-minted
-//! credential before returning.
+//! below work from the [`teams_auth::TokenCache`] in the store selected by
+//! `TEAMS_RS_CREDENTIAL_STORE` — the same backend `teams-cli auth login` wrote. Each
+//! call **reloads the cache** (no lock is ever held across the await) and persists the
+//! re-minted credential before returning.
 
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use teams_auth::{AUDIENCE_SPACES, SCOPE_SPACES, TokenCache};
+use teams_auth::{
+    AUDIENCE_SPACES, CredentialStore, FileStore, SCOPE_SPACES, TokenCache, default_store,
+};
 
 use crate::ApiError;
 
@@ -31,7 +34,7 @@ pub type RefreshFuture<'a> = Pin<Box<dyn Future<Output = Result<String, ApiError
 /// The HTTP layer calls this at most once per logical request — only when a refresher is
 /// attached (see `with_refresher` on the clients) and only on a 401 — then replays the
 /// request with the returned value. Implementations evict the rejected credential and
-/// re-mint from the on-disk token cache.
+/// re-mint from the token cache.
 pub trait TokenRefresher: Debug + Send + Sync {
     /// Full replacement **value** for the auth header — `skypetoken=<jwt>` for the chat
     /// service, `Bearer <jwt>` for the bearer services.
@@ -54,25 +57,37 @@ fn no_cache_error() -> ApiError {
 /// Flow: reload the cache → [`TokenCache::evict`] the spaces token (a 401 says our
 /// credentials are suspect; the family refresh token survives eviction) → redeem the FRT
 /// → `POST /v1.0/authz` → persist the new session → hand back `skypetoken=<jwt>`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AuthzRefresher {
-    /// Where the token cache lives (default [`TokenCache::path`]; injectable for tests).
-    cache_path: PathBuf,
+    /// Where the token cache lives (the store selected by `TEAMS_RS_CREDENTIAL_STORE`;
+    /// injectable for tests).
+    store: Box<dyn CredentialStore>,
     /// Tenant path segment for the FRT redemption — `common`, like the login flow.
     tenant: String,
 }
 
 impl AuthzRefresher {
-    /// Refresher over the default on-disk cache.
-    #[must_use]
-    pub fn new() -> Self {
-        Self { cache_path: TokenCache::path(), tenant: "common".to_owned() }
+    /// Refresher over the credential store the CLI signs in to.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Auth`] when store selection fails (unknown
+    /// `TEAMS_RS_CREDENTIAL_STORE` value, keyring without a Secret Service daemon).
+    pub fn new() -> Result<Self, ApiError> {
+        Ok(Self { store: default_store()?, tenant: "common".to_owned() })
     }
 
     /// Read/write a different cache file (tests, non-default state directories).
     #[must_use]
     pub fn with_cache_path(mut self, path: impl Into<PathBuf>) -> Self {
-        self.cache_path = path.into();
+        self.store = Box::new(FileStore::new(path));
+        self
+    }
+
+    /// Read/write an explicit credential store (the keyring, alternate backends).
+    #[must_use]
+    pub fn with_store(mut self, store: Box<dyn CredentialStore>) -> Self {
+        self.store = store;
         self
     }
 
@@ -84,18 +99,12 @@ impl AuthzRefresher {
     }
 }
 
-impl Default for AuthzRefresher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TokenRefresher for AuthzRefresher {
     fn refresh(&self) -> RefreshFuture<'_> {
-        let cache_path = self.cache_path.clone();
+        let store = &*self.store;
         let tenant = self.tenant.clone();
         Box::pin(async move {
-            let mut cache = TokenCache::load_from(&cache_path)?.ok_or_else(no_cache_error)?;
+            let mut cache = TokenCache::load_store(store)?.ok_or_else(no_cache_error)?;
 
             // Never trust the cached spaces token mid-recovery: the 401 may be a
             // server-side revocation our local expiry clock cannot see. Eviction keeps
@@ -105,12 +114,12 @@ impl TokenRefresher for AuthzRefresher {
             let access = cache.fresh_or_redeem(AUDIENCE_SPACES, SCOPE_SPACES, &tenant).await?;
             // Persist the re-minted token even if the exchange below fails (same policy
             // as `teams-cli auth authz`): the redemption already happened.
-            cache.save_to(&cache_path)?;
+            cache.save_store(store)?;
 
             let session = teams_auth::AuthzClient::new().exchange(&access).await?;
             let header = format!("skypetoken={}", session.skype_token);
             cache.authz = Some(session);
-            cache.save_to(&cache_path)?;
+            cache.save_store(store)?;
             tracing::info!("chat credential re-minted via authz exchange");
             Ok(header)
         })
@@ -122,25 +131,36 @@ impl TokenRefresher for AuthzRefresher {
 ///
 /// Flow: reload the cache → [`TokenCache::evict`] the audience (its access token was just
 /// rejected; the FRT survives) → redeem → persist → hand back `Bearer <jwt>`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AudienceRefresher {
     audience: &'static str,
     scope: &'static str,
     tenant: String,
-    cache_path: PathBuf,
+    store: Box<dyn CredentialStore>,
 }
 
 impl AudienceRefresher {
-    /// Refresher for one audience/scope pair over the default on-disk cache.
-    #[must_use]
-    pub fn new(audience: &'static str, scope: &'static str) -> Self {
-        Self { audience, scope, tenant: "common".to_owned(), cache_path: TokenCache::path() }
+    /// Refresher for one audience/scope pair over the credential store the CLI signs in
+    /// to.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Auth`] when store selection fails (see [`AuthzRefresher::new`]).
+    pub fn new(audience: &'static str, scope: &'static str) -> Result<Self, ApiError> {
+        Ok(Self { audience, scope, tenant: "common".to_owned(), store: default_store()? })
     }
 
     /// Read/write a different cache file (tests, non-default state directories).
     #[must_use]
     pub fn with_cache_path(mut self, path: impl Into<PathBuf>) -> Self {
-        self.cache_path = path.into();
+        self.store = Box::new(FileStore::new(path));
+        self
+    }
+
+    /// Read/write an explicit credential store (the keyring, alternate backends).
+    #[must_use]
+    pub fn with_store(mut self, store: Box<dyn CredentialStore>) -> Self {
+        self.store = store;
         self
     }
 
@@ -157,14 +177,14 @@ impl TokenRefresher for AudienceRefresher {
         let audience = self.audience;
         let scope = self.scope;
         let tenant = self.tenant.clone();
-        let cache_path = self.cache_path.clone();
+        let store = &*self.store;
         Box::pin(async move {
-            let mut cache = TokenCache::load_from(&cache_path)?.ok_or_else(no_cache_error)?;
+            let mut cache = TokenCache::load_store(store)?.ok_or_else(no_cache_error)?;
 
             let evicted = cache.evict(audience);
             tracing::debug!(audience, evicted, "credential evicted before re-mint");
             let access = cache.fresh_or_redeem(audience, scope, &tenant).await?;
-            cache.save_to(&cache_path)?;
+            cache.save_store(store)?;
             tracing::info!(audience, "credential re-minted from the family refresh token");
             Ok(format!("Bearer {access}"))
         })
