@@ -1,0 +1,43 @@
+{
+  "annotationsSummary": {
+    "emotions": {
+      "follow": 1
+    }
+  },
+  "clientmessageid": "1793058837542",
+  "composetime": "<redacted>",
+  "content": "<redacted>",
+  "contenttype": "Text",
+  "conversationLink": "<redacted>",
+  "conversationid": "<redacted>",
+  "from": "<redacted>",
+  "fromDisplayNameInToken": "<redacted>",
+  "fromFamilyNameInToken": "<redacted>",
+  "fromGivenNameInToken": "<redacted>",
+  "fromTenantId": "<redacted>",
+  "id": "1793058838818",
+  "imdisplayname": "<redacted>",
+  "messagetype": "RichText/Html",
+  "originalarrivaltime": "<redacted>",
+  "properties": {
+    "emotions": [
+      {
+        "key": "follow",
+        "users": [
+          {
+            "mri": "<redacted>",
+            "time": 0,
+            "value": "0"
+          }
+        ]
+      }
+    ],
+    "languageStamp": "<redacted>",
+    "mentions": "[{\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 0, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}]",
+    "skipfanouttobots": false,
+    "subject": "<redacted>"
+  },
+  "sequenceId": 733,
+  "type": "Message",
+  "version": "1793063271842"
+}

@@ -51,6 +51,12 @@ enum Command {
         /// Page size for the messages page
         #[arg(long, default_value_t = 10)]
         page_size: u32,
+        /// Fetch one thread instead of the conversation's messages: root message id
+        #[arg(long)]
+        root: Option<String>,
+        /// Fetch a single message by id instead of a page
+        #[arg(long)]
+        message: Option<String>,
         /// Write the response JSON to this path (contains message data — only use paths
         /// under the gitignored docs/traces/, never commit the output)
         #[arg(long)]
@@ -117,33 +123,60 @@ async fn run(cli: &Cli) -> Result<()> {
         Some(Command::Conversations { page_size, raw_out }) => {
             list_conversations(*page_size, raw_out.as_deref()).await
         }
-        Some(Command::History { conv, page_size, raw_out }) => {
-            list_messages(conv, *page_size, raw_out.as_deref()).await
+        Some(Command::History { conv, page_size, root, message, raw_out }) => {
+            history(conv, *page_size, root.as_deref(), message.as_deref(), raw_out.as_deref()).await
         }
     }
 }
 
-/// `teams-cli history --conv <id>` — messages page for one conversation (Phase 4).
-async fn list_messages(
+/// `teams-cli history --conv <id> [--root <id> | --message <id>]`.
+///
+/// Plain: the conversation's messages page (typed). `--root`: the thread — root plus
+/// replies — through the `;messageid=` path form. `--message`: a single message.
+async fn history(
     conv: &str,
     page_size: u32,
+    root: Option<&str>,
+    message: Option<&str>,
     raw_out: Option<&std::path::Path>,
 ) -> Result<()> {
+    if root.is_some() && message.is_some() {
+        anyhow::bail!("--root and --message are mutually exclusive");
+    }
+
     let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
     let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
-
     let client = teams_api::ChatClient::from_session(session)?;
-    let response = client.list_messages(conv, page_size).await.context("listing messages")?;
 
+    if let Some(root) = root {
+        let thread = client.get_thread(conv, root, page_size).await.context("fetching thread")?;
+        dump_raw(&serde_json::to_value(&thread)?, raw_out)?;
+        print_thread_summary(&thread, root);
+        return Ok(());
+    }
+    if let Some(id) = message {
+        let msg = client.get_message(conv, id).await.context("fetching message")?;
+        dump_raw(&serde_json::to_value(&msg)?, raw_out)?;
+        println!("single message (bare object, no page envelope)");
+        print_message_line(&msg);
+        return Ok(());
+    }
+
+    let page = client.list_messages(conv, page_size).await.context("listing messages")?;
+    dump_raw(&serde_json::to_value(&page)?, raw_out)?;
+    print_message_summary(&page);
+    Ok(())
+}
+
+/// Write a response to `--raw-out` (gitignored `docs/traces/` only — never commit).
+fn dump_raw(value: &serde_json::Value, raw_out: Option<&std::path::Path>) -> Result<()> {
     if let Some(path) = raw_out {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, serde_json::to_vec_pretty(&response)?)?;
+        std::fs::write(path, serde_json::to_vec_pretty(value)?)?;
         eprintln!("response written to {} (do not commit)", path.display());
     }
-
-    print_message_summary(&response);
     Ok(())
 }
 
@@ -160,38 +193,62 @@ fn print_message_summary(page: &teams_protocol::MessagePage) {
         page.tenant_id.is_some()
     );
     for msg in &page.messages {
-        let kind = msg.message_type.as_deref().unwrap_or("-");
-        let when = msg.original_arrival_time.as_deref().unwrap_or("-");
-        let who = msg.im_display_name.as_deref().unwrap_or("<unknown>");
-        let mut marks = String::new();
-        if msg.is_system() {
-            marks.push_str(" [system]");
-        }
-        if msg.is_edited() {
-            marks.push_str(" [edited]");
-        }
-        if msg.is_reply() {
-            marks.push_str(" [reply]");
-        }
-        let reactions: Vec<String> = msg.emotions().into_iter().map(|e| e.key).collect();
-        let reactions = if reactions.is_empty() {
-            String::new()
-        } else {
-            format!(" · reactions={}", reactions.join(","))
-        };
-        let mentions = msg.mentions().len();
-        println!(
-            "  seq={:<6} {kind} · {when} · {who}{marks}{reactions}",
-            msg.sequence_id.unwrap_or(0)
-        );
-        println!(
-            "           id={} · root={} · mentions={} · content {} chars",
-            msg.id,
-            msg.root_message_id.as_deref().unwrap_or("-"),
-            mentions,
-            msg.content.as_deref().map_or(0, str::len)
-        );
+        print_message_line(msg);
     }
+}
+
+/// Thread summary: root + replies, with counts.
+fn print_thread_summary(thread: &teams_protocol::MessagePage, root_id: &str) {
+    let is_root = |m: &teams_protocol::Message| m.id == root_id;
+    let roots = thread.messages.iter().filter(|m| is_root(m)).count();
+    let replies = thread.messages.iter().filter(|m| !is_root(m)).count();
+    let paging = if thread.metadata.sync_state.is_some() {
+        "more replies available"
+    } else {
+        "complete thread"
+    };
+    println!(
+        "thread {root_id}: {} messages ({roots} root + {replies} replies, {paging})",
+        thread.messages.len()
+    );
+    for msg in &thread.messages {
+        if is_root(msg) {
+            println!("  ── root ──");
+        }
+        print_message_line(msg);
+    }
+}
+
+/// One message, two lines. Values print to the user's own terminal only.
+fn print_message_line(msg: &teams_protocol::Message) {
+    let kind = msg.message_type.as_deref().unwrap_or("-");
+    let when = msg.original_arrival_time.as_deref().unwrap_or("-");
+    let who = msg.im_display_name.as_deref().unwrap_or("<unknown>");
+    let mut marks = String::new();
+    if msg.is_system() {
+        marks.push_str(" [system]");
+    }
+    if msg.is_edited() {
+        marks.push_str(" [edited]");
+    }
+    if msg.is_reply() {
+        marks.push_str(" [reply]");
+    }
+    let reactions: Vec<String> = msg.emotions().into_iter().map(|e| e.key).collect();
+    let reactions = if reactions.is_empty() {
+        String::new()
+    } else {
+        format!(" · reactions={}", reactions.join(","))
+    };
+    let mentions = msg.mentions().len();
+    println!("  seq={:<6} {kind} · {when} · {who}{marks}{reactions}", msg.sequence_id.unwrap_or(0));
+    println!(
+        "           id={} · root={} · mentions={} · content {} chars",
+        msg.id,
+        msg.root_message_id.as_deref().unwrap_or("-"),
+        mentions,
+        msg.content.as_deref().map_or(0, str::len)
+    );
 }
 
 /// `teams-cli conversations` — live chat-service call (Phase 2A exit criterion).

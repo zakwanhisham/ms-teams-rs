@@ -9,6 +9,8 @@
 use teams_protocol::{Message, MessagePage};
 
 const FIXTURE: &str = include_str!("fixtures/messages.json");
+const THREAD_FIXTURE: &str = include_str!("fixtures/thread.json");
+const SINGLE_FIXTURE: &str = include_str!("fixtures/message.json");
 
 fn page() -> MessagePage {
     serde_json::from_str(FIXTURE).expect("messages fixture must deserialize")
@@ -172,4 +174,71 @@ fn roundtrip_is_lossless() {
     let again = serde_json::to_string(&page).expect("serialize");
     let back: MessagePage = serde_json::from_str(&again).expect("reparse");
     assert_eq!(page, back);
+}
+
+/// `GET …/conversations/{conv};messageid={root}/messages` — same envelope as the plain
+/// messages page, holding the root plus its replies.
+#[test]
+fn thread_fixture_holds_root_and_reply() {
+    let page: MessagePage = serde_json::from_str(THREAD_FIXTURE).expect("thread fixture");
+
+    assert_eq!(page.messages.len(), 2);
+    assert_eq!(page.tenant_id.as_deref(), Some("<redacted>"));
+    let meta = &page.metadata;
+    assert!(meta.sync_state.is_some(), "thread pages still expose a cursor");
+    assert!(
+        meta.backward_link.is_none(),
+        "thread response carries only syncState + segment bounds"
+    );
+    assert_eq!(meta.last_complete_segment_start_time, Some(0));
+
+    let (root, reply) = (&page.messages[0], &page.messages[1]);
+    assert!(!root.is_reply(), "root points at itself");
+    assert!(reply.is_reply());
+    assert_eq!(
+        reply.root_message_id.as_deref(),
+        Some(root.id.as_str()),
+        "reply resolves to the root fetched"
+    );
+    assert_eq!(reply.conversation_id, root.conversation_id);
+    assert_eq!(reply.message_type, root.message_type);
+    // The reply carries the stringified attachment arrays; the root does not.
+    assert_eq!(reply.properties.cards.as_ref(), Some(&serde_json::json!("[]")));
+    assert_eq!(reply.properties.files.as_ref(), Some(&serde_json::json!("[]")));
+    assert_eq!(reply.properties.links.as_ref(), Some(&serde_json::json!("[]")));
+}
+
+/// `GET …/conversations/{conv}/messages/{id}` — a bare message, no page envelope.
+#[test]
+fn single_message_fixture_is_bare_and_typed() {
+    let msg: Message = serde_json::from_str(SINGLE_FIXTURE).expect("single fixture");
+
+    assert_eq!(msg.id, "1793058838818");
+    assert_eq!(msg.sequence_id, Some(733));
+    assert_eq!(msg.content_type.as_deref(), Some("Text"));
+    assert_eq!(
+        msg.from_tenant_id.as_deref(),
+        Some("<redacted>"),
+        "single-message reads add fromTenantId"
+    );
+    assert!(msg.annotations_summary.is_some());
+    assert!(!msg.is_reply());
+    assert!(!msg.is_edited());
+
+    // The lenient accessors work on this shape too.
+    let mentions = msg.mentions();
+    assert_eq!(mentions.len(), 1);
+    assert_eq!(mentions[0].mention_type.as_deref(), Some("person"));
+    assert_eq!(mentions[0].item_id, Some(0));
+
+    let emotions = msg.emotions();
+    assert_eq!(emotions.len(), 1);
+    assert_eq!(emotions[0].key, "follow");
+
+    assert!(msg.properties.subject.is_some());
+    assert_eq!(
+        msg.properties.extra.get("skipfanouttobots"),
+        Some(&serde_json::json!(false)),
+        "untyped bool property survives in the catch-all"
+    );
 }

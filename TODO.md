@@ -231,7 +231,9 @@ work-account login ran through it (2026-10-27).**
       - [x] `list_messages(conv, page_size)` — typed `MessagePage`, lenient
             `mentions()`/`emotions()` accessors (stringified-JSON properties), system/edit
             classification helpers (verified live)
-      - [ ] `get_message(conv, id)` / `get_thread(conv, root_id)` (via `;messageid=`)
+      - [x] `get_message(conv, id)` / `get_thread(conv, root_id)` (via `;messageid=`) —
+            **verified live** 2026-10-27. Thread reuses `MessagePage`; a single message is a
+            bare `Message` (adds `fromTenantId`). Fixtures: `thread.json`, `message.json`.
       - [ ] `roster()` (CSA), `search_people(q)` (substrate)
 - [~] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
       correct auth header per service (`Authentication` vs `Authorization`) ✅, `ApiError`

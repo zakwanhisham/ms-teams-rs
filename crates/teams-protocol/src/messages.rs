@@ -76,6 +76,9 @@ pub struct Message {
     /// Sender given name taken from the auth token.
     #[serde(rename = "fromGivenNameInToken", default)]
     pub from_given_name_in_token: Option<String>,
+    /// Sender identity of another tenant, present on some single-message reads.
+    #[serde(rename = "fromTenantId", default)]
+    pub from_tenant_id: Option<String>,
     /// Message body: HTML, XML or plain text depending on [`Message::message_type`].
     #[serde(default)]
     pub content: Option<String>,

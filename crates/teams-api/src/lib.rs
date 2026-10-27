@@ -120,11 +120,52 @@ impl ChatClient {
         conv: &str,
         page_size: u32,
     ) -> Result<teams_protocol::MessagePage, ApiError> {
-        let path = format!(
-            "v1/users/ME/conversations/{}/messages?pageSize={page_size}&startTime=0",
-            encode_path_segment(conv)
-        );
-        let value = self.get(&path).await?;
+        let value = self.get(&messages_path(conv, page_size)).await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// Fetch the thread of a message: the root plus its replies.
+    ///
+    /// `GET {base}/v1/users/ME/conversations/{conv};messageid={root}/messages?…`
+    ///
+    /// The `;messageid=` suffix rides on the *conversation id segment* rather than being a
+    /// separate path element — that is what the web client sends. The response is the same
+    /// `{_metadata, messages, tenantId}` envelope as the plain messages page (verified live
+    /// 2026-10-27), so it reuses [`teams_protocol::MessagePage`].
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on non-2xx (404 = root id does not exist in this
+    /// conversation), [`ApiError::Json`] on malformed JSON or an unparseable typed shape,
+    /// [`ApiError::Http`] on transport failure.
+    pub async fn get_thread(
+        &self,
+        conv: &str,
+        root_id: &str,
+        page_size: u32,
+    ) -> Result<teams_protocol::MessagePage, ApiError> {
+        let value = self.get(&thread_path(conv, root_id, page_size)).await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// Fetch a single message by id.
+    ///
+    /// `GET {base}/v1/users/ME/conversations/{conv}/messages/{id}`
+    ///
+    /// Unlike the pages, the response is a **bare message object** (no `_metadata`
+    /// envelope) and additionally carries `fromTenantId`.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on non-2xx (404 when the message is gone or unknown),
+    /// [`ApiError::Json`] on malformed JSON or an unparseable typed shape,
+    /// [`ApiError::Http`] on transport failure.
+    pub async fn get_message(
+        &self,
+        conv: &str,
+        message_id: &str,
+    ) -> Result<teams_protocol::Message, ApiError> {
+        let value = self.get(&message_path(conv, message_id)).await?;
         Ok(serde_json::from_value(value)?)
     }
 
@@ -165,13 +206,41 @@ impl ChatClient {
         &self,
         page_size: u32,
     ) -> Result<teams_protocol::ConversationList, ApiError> {
-        let value = self
-            .get(&format!(
-                "v1/users/ME/conversations?view=msnp24Equivalent&pageSize={page_size}&startTime=0"
-            ))
-            .await?;
+        let value = self.get(&conversations_path(page_size)).await?;
         Ok(serde_json::from_value(value)?)
     }
+}
+
+/// `GET /v1/users/ME/conversations` page path (`msnp24Equivalent` view, first page).
+fn conversations_path(page_size: u32) -> String {
+    format!("v1/users/ME/conversations?view=msnp24Equivalent&pageSize={page_size}&startTime=0")
+}
+
+/// Messages page path of one conversation.
+fn messages_path(conv: &str, page_size: u32) -> String {
+    format!(
+        "v1/users/ME/conversations/{}/messages?pageSize={page_size}&startTime=0",
+        encode_path_segment(conv)
+    )
+}
+
+/// Thread path — `;messageid={root}` rides on the **conversation id segment** instead of
+/// being its own path element, matching what the web client sends.
+fn thread_path(conv: &str, root_id: &str, page_size: u32) -> String {
+    format!(
+        "v1/users/ME/conversations/{};messageid={}/messages?pageSize={page_size}&startTime=0",
+        encode_path_segment(conv),
+        encode_path_segment(root_id)
+    )
+}
+
+/// Single-message path.
+fn message_path(conv: &str, message_id: &str) -> String {
+    format!(
+        "v1/users/ME/conversations/{}/messages/{}",
+        encode_path_segment(conv),
+        encode_path_segment(message_id)
+    )
 }
 
 /// Percent-encode one path segment.
@@ -250,5 +319,36 @@ mod tests {
         assert_eq!(encode_path_segment("a b"), "a%20b");
         assert_eq!(encode_path_segment("50%off"), "50%25off");
         assert_eq!(encode_path_segment("a/b"), "a%2Fb");
+    }
+
+    #[test]
+    fn conversations_path_is_the_first_msnp24_page() {
+        assert_eq!(
+            conversations_path(5),
+            "v1/users/ME/conversations?view=msnp24Equivalent&pageSize=5&startTime=0"
+        );
+    }
+
+    /// The `;messageid=` form is protocol surface: it must stay glued to the conv id.
+    #[test]
+    fn thread_path_keeps_the_semicolon_form() {
+        assert_eq!(
+            thread_path("19:abc@thread.tacv2", "1700000000001", 10),
+            "v1/users/ME/conversations/19:abc@thread.tacv2;\
+             messageid=1700000000001/messages?pageSize=10&startTime=0"
+        );
+    }
+
+    #[test]
+    fn message_paths_encode_only_path_breaking_bytes() {
+        let conv = "19:meeting_x?y@thread.v2"; // a literal `?` would start the query string
+        assert_eq!(
+            messages_path(conv, 5),
+            "v1/users/ME/conversations/19:meeting_x%3Fy@thread.v2/messages?pageSize=5&startTime=0"
+        );
+        assert_eq!(
+            message_path(conv, "1700000000001"),
+            "v1/users/ME/conversations/19:meeting_x%3Fy@thread.v2/messages/1700000000001"
+        );
     }
 }

@@ -1,0 +1,82 @@
+{
+  "_metadata": {
+    "lastCompleteSegmentEndTime": 0,
+    "lastCompleteSegmentStartTime": 0,
+    "syncState": "<redacted>"
+  },
+  "messages": [
+    {
+      "annotationsSummary": {
+        "emotions": {
+          "follow": 1
+        }
+      },
+      "clientmessageid": "1793058837542",
+      "composetime": "<redacted>",
+      "content": "<redacted>",
+      "contenttype": "Text",
+      "conversationLink": "<redacted>",
+      "conversationid": "<redacted>",
+      "from": "<redacted>",
+      "fromDisplayNameInToken": "<redacted>",
+      "fromFamilyNameInToken": "<redacted>",
+      "fromGivenNameInToken": "<redacted>",
+      "id": "1793058838818",
+      "imdisplayname": "<redacted>",
+      "messagetype": "RichText/Html",
+      "originalarrivaltime": "<redacted>",
+      "properties": {
+        "emotions": [
+          {
+            "key": "follow",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "0"
+              }
+            ]
+          }
+        ],
+        "languageStamp": "<redacted>",
+        "mentions": "[{\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 0, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}]",
+        "skipfanouttobots": false,
+        "subject": "<redacted>"
+      },
+      "rootMessageId": "1793058838818",
+      "sequenceId": 733,
+      "type": "Message",
+      "version": "1793063271842"
+    },
+    {
+      "amsreferences": [],
+      "clientmessageid": "2040975658407849439",
+      "composetime": "<redacted>",
+      "content": "<redacted>",
+      "contenttype": "Text",
+      "conversationLink": "<redacted>",
+      "conversationid": "<redacted>",
+      "from": "<redacted>",
+      "fromDisplayNameInToken": "<redacted>",
+      "fromFamilyNameInToken": "<redacted>",
+      "fromGivenNameInToken": "<redacted>",
+      "id": "1793085256125",
+      "imdisplayname": "<redacted>",
+      "messagetype": "RichText/Html",
+      "originalarrivaltime": "<redacted>",
+      "properties": {
+        "cards": "[]",
+        "files": "[]",
+        "formatVariant": "TEAMS",
+        "languageStamp": "<redacted>",
+        "links": "[]",
+        "mentions": "[]"
+      },
+      "rootMessageId": "1793058838818",
+      "sequenceId": 741,
+      "type": "Message",
+      "version": "1793085256125"
+    }
+  ],
+  "tenantId": "<redacted>"
+}

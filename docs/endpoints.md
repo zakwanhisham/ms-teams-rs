@@ -24,8 +24,8 @@
 |----|---------------|--------|
 | List conversations | `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=0` | ✅ |
 | List messages | `GET /v1/users/ME/conversations/{conv}/messages?pageSize=N&startTime=0` | ✅ |
-| Read one message | `GET /v1/users/ME/conversations/{conv}/messages/{id}` | ⬜ |
-| Read thread (root + replies) | `GET /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⬜ |
+| Read one message | `GET /v1/users/ME/conversations/{conv}/messages/{id}` | ✅ |
+| Read thread (root + replies) | `GET /v1/users/ME/conversations/{conv};messageid={root}/messages` | ✅ |
 | Post message | `POST /v1/users/ME/conversations/{conv}/messages` | ⬜ |
 | Reply | `POST /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⬜ |
 | Edit | `PUT /v1/users/ME/conversations/{conv}/messages/{id}` (+ `skypeeditedid`) | ⬜ |
@@ -92,6 +92,35 @@ Notes:
   - Edit marker is `skypeeditedid` (equals `clientmessageid` of the edit); delete
     bookkeeping lives in `properties.adminDelete`/`deletetime`/`hardDelete*`.
   - `contenttype` casing is inconsistent (`Text` and `text` both observed).
+- **Read thread — verified live 2026-10-27** (typed as `teams_protocol::MessagePage`,
+  fixture `crates/teams-protocol/tests/fixtures/thread.json`).
+
+  ```bash
+  cargo run -q -p teams-cli -- history --conv '<id>' --root '<root message id>' --page-size 20
+  ```
+
+  Caveats:
+  - `;messageid={root}` is glued to the **conversation id segment**
+    (`…/conversations/19:…@thread.tacv2;messageid=1700…/messages`), not a separate path
+    element. `teams-api::thread_path` builds it and unit-tests the exact string.
+  - The envelope is the plain messages page: `{_metadata, messages, tenantId}` — but
+    `_metadata` here carries only `syncState` + the two segment bounds (no
+    `backwardLink`), so a thread cannot be paged backwards the way a conversation can.
+  - Ordering is **not** root-first: the root lands wherever its `sequenceId` puts it
+    (observed mid-list), so identify it by `id == rootMessageId` rather than position.
+
+- **Read one message — verified live 2026-10-27** (typed as `teams_protocol::Message`,
+  fixture `crates/teams-protocol/tests/fixtures/message.json`).
+
+  ```bash
+  cargo run -q -p teams-cli -- history --conv '<id>' --message '<message id>'
+  ```
+
+  Caveats:
+  - The response is a **bare message object**, not a page — no `_metadata`, no `messages`
+    wrapper.
+  - It carries one field the pages do not: `fromTenantId` (36-char GUID).
+
 - Server message id comes from the `Location` response header on POST (last path segment),
   falling back to `OriginalArrivalTime`. Never use the echoed `clientmessageid`.
 - `properties` is **replaced**, not merged, on edit — re-send `properties.mentions`.
