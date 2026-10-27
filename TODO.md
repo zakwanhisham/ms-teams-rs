@@ -114,13 +114,17 @@
             **verified live** 2026-10-27; typed `ConversationList` model + sanitized fixture
             + 6 tests; `teams-cli conversations` prints the page.
             (Web client sends `startTime=0`, not `1`; paging is via `_metadata.syncState`.)
-      - [ ] `GET /v1/users/ME/conversations/{id}/messages?pageSize=N&startTime=1`
+      - [x] `GET /v1/users/ME/conversations/{id}/messages?pageSize=N&startTime=0` —
+            **verified live** 2026-10-27; typed `MessagePage`/`Message` model + sanitized
+            fixture + 9 tests; `teams-cli history --conv <id>` prints the page.
       - [ ] `POST /v1/users/ME/conversations/{id}/messages` (+ `;messageid={root}` for replies)
       - [ ] `PUT …/messages/{id}` (edit, `skypeeditedid`), `DELETE`, reactions via
             `PUT …/messages/{id}/properties?name=emotions`
-      - [ ] Conversation/channel id percent-encoding (`:` `@` `;` in ids).
-      - [ ] Message HTML wire format: mentions (`properties.mentions`), code blocks,
-            quotes, attachments, @everyone.
+      - [x] Conversation/channel id handling in paths (`:` `@` `;` are sent **raw** — the
+            service's own `messagesLink` does); only path-breaking chars are encoded
+            (`teams-api::encode_path_segment`, unit-tested).
+      - [ ] Message HTML wire format: code blocks, quotes, attachments, @everyone —
+            mentions are already parsed (`properties.mentions` → `Message::mentions()`).
 - [ ] **Realtime events** — pick one and prove it with a packet capture:
       - [ ] *(A)* **HTTP long-poll**: register endpoint → `POST /v1/users/ME/endpoints/{id}/active`
             (keepalive ~45 s, `timeout: 12`) → subscribe `interestedResources`
@@ -135,8 +139,9 @@
       (audience `chatsvcagg.teams.microsoft.com`) — note `Origin`/`Referer` requirements.
 - [ ] **People/search**: `POST https://substrate.office.com/search/api/v1/suggestions`
       (needs `Origin`/`Referer: https://teams.microsoft.com` else 400).
-- [ ] Record **fixtures**: sanitized JSON samples for every endpoint into
-      `crates/*/tests/fixtures/`. These become your regression tests.
+- [~] Record **fixtures**: sanitized JSON samples for every endpoint into
+      `crates/*/tests/fixtures/` — ✅ `conversations.json` and `messages.json` landed with
+      deserialization tests; every further endpoint needs the same treatment.
 - [x] **Capture tooling**: `tools/capture/teams_trace.py` (mitmproxy addon with JWT +
       credential redaction) + `tools/capture/README.md` scenario checklist.
 
@@ -184,34 +189,48 @@ audio, and `docs/calls.md` exists with a **GO** verdict. Re-evaluate the whole t
 
 ## Phase 3 — `teams-auth`
 
-- [ ] `DeviceCodeFlow`: print the code + verification URL to the terminal, poll with backoff.
-- [ ] `TokenCache`: FRT + per-audience access tokens + derived skype session
-      (`skypetoken`, `region`, `regionGtms`, expiry), stored **`0600`** under
-      `$XDG_STATE_HOME/ms-teams-rs/token-cache.json`, with OS keyring as an alternative backend
-      behind a trait (`CredentialStore`).
-- [ ] `AuthzClient`: POST authz, parse tokens + region map, surface `AuthError::{Unauthorized, Network, Parse}`.
-- [ ] Auto-refresh: refresh access token N seconds before expiry; on chat 401 → evict session,
-      re-mint, retry **once**.
-- [ ] `teams-cli auth login | logout | status | whoami` (decodes JWT claims for display only,
-      no signature verification).
-- [ ] Unit tests with mocked HTTP (`wiremock` / `httpmock`).
+**Built early as part of the Phase 2A spike harness — `crates/teams-auth` is live and a real
+work-account login ran through it (2026-10-27).**
 
-**Exit criteria:** `teams-cli auth login && teams-cli auth status` works; tokens survive a restart.
+- [x] `DeviceCodeFlow`: prints the code + verification URL, polls with backoff (+5 s on
+      `slow_down`, decline/expiry handled) — `device_code.rs`; verified by a live login.
+- [~] `TokenCache`: FRT + per-audience access tokens + derived skype session
+      (`skypetoken`, `region`, `regionGtms`, expiry), stored **`0600`** under
+      `$XDG_STATE_HOME/teams-rs/token-cache.json` ✅ (path in this doc corrected: the code
+      uses `teams-rs`, permissions covered by a test). **OS keyring backend behind a
+      `CredentialStore` trait still open.**
+- [x] `AuthzClient`: POST authz, parse tokens + region map → `AuthzSession`; `AuthError`
+      covers transport / identity / authz / parse failures (concrete variants are `Http`,
+      `Identity`, `DeviceCode`, `Authz`, `Parse` rather than the sketch above); both known
+      response shapes handled; verified live (`region=apac`, 112 `regionGtms` services).
+- [~] Auto-refresh: ✅ refresh skew implemented (`is_expired(300)` + expired-token filtering
+      on load). **Not yet wired:** on chat 401 → evict session → re-mint → retry once — a 401
+      currently surfaces straight to the caller as `ApiError::Status`.
+- [x] `teams-cli auth login | logout | status | whoami | authz` (JWT claims decoded for
+      display only, no signature verification; token values are never printed).
+- [ ] Unit tests with mocked HTTP (`wiremock` / `httpmock`) — no mock-HTTP dependency yet;
+      current tests are unit-level over hand-built and live-captured fixtures.
+
+**Exit criteria:** ✅ `teams-cli auth login && teams-cli auth status` works (live,
+2026-10-27); tokens survive a process restart (later CLI runs reload them from the cache).
 
 ---
 
 ## Phase 4 — `teams-protocol` + `teams-api` (read path)
 
-- [~] Strongly-typed models: `Conversation`/`ConversationList`/`MessagePreview` ✅ (wire types
-      in `teams-protocol/src/conversations.rs`); `Channel`, `Message`, `User`, `Mention`,
-      `Reaction`, `MessageKind` (text/code/image/system), `EventMessage` still open.
+- [~] Strongly-typed models: `ConversationList`/`Conversation`/`MessagePage`/`Message`/
+      `Mention`/`Emotion`(+`EmotionUser`) ✅ (`teams-protocol/src/{conversations,messages}.rs`)
+      — one `Message` type serves both `lastMessage` and the messages page;
+      `Channel`, `User`, `MessageKind` (text/code/image/system), `EventMessage` still open.
 - [x] Serde deserializers tolerant of unknown fields (`#[serde(default)]`, ignore-unknown) —
-      enforced by tests for the conversation types; keep doing it per type.
+      enforced by tests for the conversation **and** message types; keep doing it per type.
 - [ ] `ChatClient` with methods:
       - [x] `list_conversations(page_size)` — typed `ConversationList`, chats + channels in
             one page (verified live; `teams_api::ChatClient::from_session` builds it from the
             cached authz session)
-      - [ ] `list_messages(conv, before, page_size)`
+      - [x] `list_messages(conv, page_size)` — typed `MessagePage`, lenient
+            `mentions()`/`emotions()` accessors (stringified-JSON properties), system/edit
+            classification helpers (verified live)
       - [ ] `get_message(conv, id)` / `get_thread(conv, root_id)` (via `;messageid=`)
       - [ ] `roster()` (CSA), `search_people(q)` (substrate)
 - [~] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
@@ -224,7 +243,10 @@ audio, and `docs/calls.md` exists with a **GO** verdict. Re-evaluate the whole t
             inline images, `@everyone`.
 - [ ] Snapshot tests from Phase 2 fixtures.
 
-**Exit criteria:** `teams-cli conversations` and `teams-cli history <conv>` print real data.
+**Exit criteria:** ✅ met — `teams-cli conversations` and `teams-cli history --conv <id>`
+both print real data (verified live 2026-10-27). Remaining Phase 4 work is beyond the exit
+criteria: `get_message`/`get_thread`, roster/search clients, the `RichText` HTML AST,
+retry/MS-CV handling and snapshot tests.
 
 ---
 
@@ -400,10 +422,10 @@ shippable. Build under `crates/teams-call`, UI under `apps/teams-gui`.*
 ## Suggested milestone order (summary)
 
 1. **M0** Skeleton + CI + docs scaffold *(Phase 1)* ✅
-2. **M1a** Chat/auth spike + docs *(Phase 2A)*
-3. **M1b** **Call protocol spike → GO/NO-GO decision** *(Phase 2B)*
-4. **M2** Auth works end-to-end from the CLI *(Phase 3)*
-5. **M3** Read messages from the terminal *(Phase 4)*
+2. **M1a** Chat/auth spike + docs *(Phase 2A)* — ✅ live chat read path proven
+3. **M1b** **Call protocol spike → GO/NO-GO decision** *(Phase 2B)* — ⏳ needs the account owner's captures
+4. **M2** Auth works end-to-end from the CLI *(Phase 3)* ✅ — exit criteria met; keyring backend + 401-retry hook open
+5. **M3** Read messages from the terminal *(Phase 4)* ✅ — exit criteria met; RichText AST, roster/search, retries open
 6. **M4** Realtime + send messages *(Phase 5)*
 7. **M5** GUI chat client usable daily *(Phase 6)*
 8. **M6** Packaged, tray + notifications + incoming-call ringing *(Phase 7)*
