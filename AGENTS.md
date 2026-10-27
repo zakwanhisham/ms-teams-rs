@@ -9,9 +9,11 @@ undocumented Teams web-client APIs (chat/IC3, authsvc, CSA, Graph, Trouter/WebRT
 affiliated with Microsoft — never claim official status or use Microsoft branding as if
 endorsed.
 
-**Status:** Phase 1 complete (workspace + CI + docs scaffold). Nothing functional yet.
-The full plan lives in [`TODO.md`](TODO.md); the current phase's checklist is the source
-of truth for what to build next. `docs/` contains the protocol research.
+**Status:** Phase 1 complete (workspace + CI + docs scaffold). Phase 2A in progress:
+`teams-auth` (device-code login, token cache, authz) + `teams-cli auth …` + capture tooling
+exist; live logins/captures need the account owner. The full plan lives in [`TODO.md`](TODO.md);
+the current phase's checklist is the source of truth for what to build next. `docs/` contains
+the protocol research.
 
 ## Commands
 

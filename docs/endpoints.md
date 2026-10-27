@@ -3,6 +3,8 @@
 > Research document — Phase 2A findings go here. Plan: [`../TODO.md`](../TODO.md).
 > Add every endpoint you prove, with an authenticated reproduction command.
 > Sanitize anything copied from captures.
+>
+> **Status:** ✅ verified live · 🔶 implemented, awaiting live verification · ⬜ open
 
 ## Conventions
 
@@ -70,11 +72,17 @@ Subscribed resources (web client): `/v1/threads/ALL`, `/v1/users/ME/contacts/ALL
 
 Signalling, meeting join, media/TURN allocation: documented in `calls.md`.
 
+## Trouter websocket (call signalling — Phase 2B)
+
+| Op | Method + path | Status |
+|----|---------------|--------|
+| Websocket endpoint | `wss://go.trouter.io/v2/a` | 🔶 exists: unauthenticated upgrade probe returns **HTTP 401, empty body** (2026-10-27) — auth material TBD from capture |
+
 ## authz
 
 | Op | Method + path | Status |
 |----|---------------|--------|
-| Exchange | `POST https://authsvc.teams.microsoft.com/v1.0/authz` | ⬜ |
+| Exchange | `POST https://authsvc.teams.microsoft.com/v1.0/authz` | 🔶 implemented in `teams-auth::AuthzClient`; live response shape pending login |
 | Visitor (webinar) | `POST https://authsvc.teams.microsoft.com/v1.0/authz/visitor` | ⬜ |
 
-See [auth.md](auth.md) for details.
+Identity platform (device-code) endpoints are documented in [auth.md](auth.md) — probe-verified 2026-10-27.

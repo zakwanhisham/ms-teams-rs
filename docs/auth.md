@@ -1,6 +1,6 @@
 # Authentication
 
-> Research document — Phase 2A findings go here. Plan: [`../TODO.md`](../TODO.md).
+> Research document — Phase 2A. Plan: [`../TODO.md`](../TODO.md).
 > **Never paste real tokens, tenant ids or account names into this file.**
 
 ## Goal
@@ -8,7 +8,7 @@
 Obtain and continuously refresh a **skypetoken** plus the service region map, which gates
 every Teams API call.
 
-## Flow (hypothesis — confirm in the spike)
+## Flow (partially verified — see Findings)
 
 ```
 device-code login ──► FRT (family refresh token)
@@ -24,39 +24,86 @@ device-code login ──► FRT (family refresh token)
         bearer services: Authorization: Bearer <jwt>
 ```
 
+## Status legend
+
+✅ verified against live services · 🔶 implemented, awaiting live login · ⬜ open
+
+## Findings
+
+### Identity platform probes (2026-10-27, unauthenticated `POST …/oauth2/v2.0/devicecode`)
+
+| Scope (client `1fec8e78-bce4-4aaf-ab1b-5451cc387264`, tenant `common`) | Result |
+|---|---|
+| `openid offline_access https://api.spaces.skype.com/.default` | ✅ **HTTP 200** — device code issued |
+| `https://api.spaces.skype.com/.default` | ✅ HTTP 200 |
+| `openid profile offline_access 00000003-0000-0ff1-ce00-000000000000/.default` (O365 suite) | ✅ HTTP 200 |
+| `openid offline_access https://graph.microsoft.com/.default` | ❌ HTTP 401 `invalid_client` / `AADSTS70002` "not enabled for consumers" |
+| `openid profile offline_access User.Read` (delegated) | ❌ HTTP 401, same `AADSTS70002` |
+
+Conclusions:
+- The **FOCI Teams client accepts device-code grants** — the primary login path is viable.
+  Default scope for the spike: `openid offline_access https://api.spaces.skype.com/.default`.
+- **Graph cannot be reached through this client at the device-code stage** (neither
+  `.default` nor delegated `User.Read`). Graph tokens likely require a different acquisition
+  path (another client id, or in-session MSAL like teams-for-linux does). → open question,
+  tracked in Phase 9.
+
+### Implementation status (in `crates/teams-auth`)
+
+| Step | Status | Notes |
+|---|---|---|
+| Device-code request + poll (incl. `slow_down`, decline, expiry) | 🔶 | `device_code.rs`; live login pending (needs your account) |
+| FRT → per-audience refresh | 🔶 | `DeviceCodeClient::refresh` |
+| Token cache, `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` | 🔶 | `token_cache.rs`; permissions covered by test |
+| authz exchange (both enterprise & consumer response shapes) | 🔶 | `authz.rs`; parses `tokens.skypeToken` *or* `skypeToken.skypetoken`, string or object |
+| Claim decoding (unverified, display only) | 🔶 | `jwt.rs` |
+| CLI: `teams-cli auth login/status/authz/whoami/logout` | 🔶 | never prints token values |
+
+### Endpoint notes
+
+- `POST https://login.microsoftonline.com/{tenant}/oauth2/v2.0/devicecode` — form:
+  `client_id`, `scope`. Response: `device_code`, `user_code`, `verification_uri`,
+  (`verification_uri_complete` when present), `expires_in`, `interval`, `message`.
+- `POST …/oauth2/v2.0/token` — grants `device_code` / `refresh_token`; pending state is
+  HTTP 400 `{"error":"authorization_pending"}`, back off +5 s on `slow_down`.
+- `POST https://authsvc.teams.microsoft.com/v1.0/authz` — `Authorization: Bearer <spaces
+  jwt>`, empty JSON body → `{tokens.skypeToken, region, regionGtms, expiresIn}` (enterprise
+  shape; consumer shape differs — both handled). **Live response still to be captured**:
+  run `teams-cli auth login` inside the proxy (`tools/capture/README.md`) and record the
+  `regionGtms` key list here.
+
 ## Checklist
 
 ### Device-code login (FOCI client `1fec8e78-bce4-4aaf-ab1b-5451cc387264`)
-- [ ] `POST /{tenant|common}/oauth2/v2.0/devicecode` → `device_code`, `user_code`, `verification_uri`, interval
-- [ ] `POST /{tenant|common}/oauth2/v2.0/token` polling with `grant_type=urn:ietf:params:oauth:grant-type:device_code`
-- [ ] Confirm FRT (`foci`) is returned for work **and** personal accounts
+- [x] `POST /{tenant|common}/oauth2/v2.0/devicecode` → verified live (probe table above)
+- [x] `POST …/token` polling with `grant_type=urn:ietf:params:oauth:grant-type:device_code`
+      (code handles pending/slow_down/declined/expired; integration-testable only via login)
+- [ ] Confirm FRT (`foci`) is returned for work **and** personal accounts — *needs your login*
 - [ ] Behaviour under MFA / Conditional Access / device compliance — record exact error codes
+      — *needs your login*
 
 ### Per-audience token redemption
-- [ ] `https://api.spaces.skype.com` (chat)
+- [ ] `https://api.spaces.skype.com` (chat) — *after login*
 - [ ] `https://chatsvcagg.teams.microsoft.com` (CSA roster)
 - [ ] `https://substrate.office.com` (search)
-- [ ] `https://graph.microsoft.com` (calendar/mail; scopes?)
+- [ ] `https://graph.microsoft.com` — ⚠️ blocked via device-code for this client (see above)
 - [ ] `go.trouter.io` (calls — needed by Phase 2B)
 - [ ] Rotation semantics: is the FRT rotated on refresh? what invalidates it?
 
 ### authz exchange
-- [ ] `POST https://authsvc.teams.microsoft.com/v1.0/authz`, empty JSON body, `Authorization: Bearer`
-- [ ] Response shape: `tokens.skypeToken`, `expiresIn`, `region`, `regionGtms` (record full key list)
-- [ ] Enterprise vs consumer response differences
+- [ ] Response shape captured live; `regionGtms` full key list recorded here
+- [ ] Enterprise vs consumer response differences — *both paths coded, one to be confirmed*
 - [ ] Error handling: 401/403 meanings, retry expectations
 
 ### Storage & lifecycle
-- [ ] Cache file: `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600`
-- [ ] Refresh ~5 min before expiry; on chat 401 → evict session → re-mint → retry once
-- [ ] `teams-cli auth login | logout | status | whoami`
-
-## Findings
-
-_(fill in during Phase 2A)_
+- [x] Cache file: `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` (tested)
+- [x] Refresh 300 s before expiry; on chat 401 → evict → re-mint → retry once (401-retry hook
+      lands with `teams-api` in Phase 4)
+- [x] `teams-cli auth login | logout | status | whoami | authz`
 
 ## Open questions
 
 - Does device-code login work for accounts with compliant-device requirements?
 - Can the cookie/WebView path be a fallback if device-code is blocked?
 - Exact MS-CV / User-Agent expectations of authsvc?
+- Which acquisition path yields **Graph** tokens (calendar/mail — Phase 9)?

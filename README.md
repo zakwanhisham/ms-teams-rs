@@ -18,7 +18,7 @@ Nothing is functional yet. The plan (with go/no-go checkpoints) lives in [`TODO.
 | Phase | Milestone | Status |
 |------:|-----------|--------|
 | 1 | Workspace + CI + docs scaffold | ✅ |
-| 2 | Protocol spike (auth/chat **and** calls → GO/NO-GO) | ⬜ |
+| 2 | Protocol spike (auth/chat **and** calls → GO/NO-GO) | 🔄 harness + probes done; captures need your login |
 | 3 | `teams-auth` — device-code login, token cache, authz | ⬜ |
 | 4 | `teams-protocol` + `teams-api` — read path | ⬜ |
 | 5 | `teams-realtime` + write path | ⬜ |

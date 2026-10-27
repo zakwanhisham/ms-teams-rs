@@ -88,19 +88,27 @@
 
 ### Phase 2A — Chat/auth protocol
 
-- [ ] **Auth path**
-      - [ ] Device-code flow against the Teams **FOCI public client**
-            `1fec8e78-bce4-4aaf-ab1b-5451cc387264` at
-            `https://login.microsoftonline.com/{tenant|common}/oauth2/v2.0/`:
-            `devicecode` → poll `token`, obtain **FRT** (family refresh token).
+**Spike harness built (2026-10-27): `crates/teams-auth` + `teams-cli auth …` + `tools/capture/`.**
+
+- [~] **Auth path**
+      - [x] Device-code flow against the Teams **FOCI public client**
+            `1fec8e78-bce4-4aaf-ab1b-5451cc387264` — **probe-verified live** (2026-10-27):
+            `spaces.skype/.default` (with/without `openid offline_access`) and the O365
+            suite scope all issue device codes; Graph scopes are rejected
+            (`AADSTS70002`). See `docs/auth.md` for the probe table.
       - [ ] Redeem FRT per-audience: `https://api.spaces.skype.com`,
             `https://chatsvcagg.teams.microsoft.com`, `substrate.office.com`,
-            `graph.microsoft.com`, **`go.trouter.io`** (needed for calls).
-      - [ ] **authz exchange:** `POST https://authsvc.teams.microsoft.com/v1.0/authz`
+            `graph.microsoft.com` (⚠️ device-code path blocked for this client — open
+            question), **`go.trouter.io`** (needed for calls).
+            *Code exists (`DeviceCodeClient::refresh`); needs a real login to verify.*
+      - [~] **authz exchange:** implemented (`AuthzClient`, handles both known response
+            shapes: `tokens.skypeToken` and consumer `skypeToken.skypetoken`),
             with `Authorization: Bearer …` → `{ tokens.skypeToken, region, regionGtms{…} }`.
-            Record the *shape* of `regionGtms` (never hardcode a region!).
+            **Live capture of the `regionGtms` key list still pending** — run
+            `teams-cli auth login` under the proxy (`tools/capture/README.md`) and record it.
       - [ ] Verify token refresh semantics: expiry claims, rotation of the FRT, what a 401 means.
-      - [ ] MFA / Conditional Access / personal-vs-work account behaviour — document failures.
+      - [ ] MFA / Conditional Access / personal-vs-work account behaviour — document failures
+            *(needs the account owner's login session)*.
 - [ ] **Chat service (IC3 / MSNP24)** — base `{chatService}` from `regionGtms`, header
       **`Authentication: skypetoken=<jwt>`** (not `Authorization`):
       - [ ] `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=1`
@@ -116,8 +124,9 @@
             (keepalive ~45 s, `timeout: 12`) → subscribe `interestedResources`
             (`/v1/threads/ALL`, `/v1/users/ME/conversations/ALL/messages`, …,
             `channelType: httpLongPoll`) → `POST …/subscriptions/{n}/poll` (blocks ~30 s).
-      - [ ] *(B)* **Trouter** (`https://go.trouter.io/v2/a`) websocket — required for call
-            signalling anyway; likely becomes the primary transport once Phase 5 lands.
+      - [ ] *(B)* **Trouter** (`wss://go.trouter.io/v2/a`) — 🔶 endpoint confirmed live
+            (unauthenticated upgrade → 401); required for call signalling anyway; likely
+            becomes the primary transport once Phase 5 lands.
       - [ ] Recommendation: **(B) is mandatory for calls**, so implement it first and keep the
             long-poll as a fallback transport behind a trait.
 - [ ] **Team/channel roster**: `GET https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/updates`
@@ -126,8 +135,13 @@
       (needs `Origin`/`Referer: https://teams.microsoft.com` else 400).
 - [ ] Record **fixtures**: sanitized JSON samples for every endpoint into
       `crates/*/tests/fixtures/`. These become your regression tests.
+- [x] **Capture tooling**: `tools/capture/teams_trace.py` (mitmproxy addon with JWT +
+      credential redaction) + `tools/capture/README.md` scenario checklist.
 
 ### Phase 2B — Call protocol spike *(GO/NO-GO CHECKPOINT)*
+
+- [x] **Capture tooling ready** — `tools/capture/` (mitmproxy addon with redaction +
+      scenario checklist). The scenarios below still need the account owner to perform them.
 
 **Goal: within ~2 weeks, join one real 1:1 Teams call and one scheduled meeting from a
 headless Rust binary, with audio flowing both ways.** If this fails, the plan reverts to

@@ -25,7 +25,9 @@ skypemessage) for each message type.
 
 ## Signalling (Trouter)
 
-- [ ] Websocket endpoint + handshake/auth: `wss://go.trouter.io/v2/a` (confirm subprotocol)
+- [ ] Websocket endpoint + handshake/auth: `wss://go.trouter.io/v2/a`
+      — 🔶 endpoint confirmed live: unauthenticated websocket upgrade → **HTTP 401**, empty
+      body (2026-10-27). Auth mechanism (bearer? cookie? skypetoken?) TBD from capture.
 - [ ] Registrar: `https://prod.registrar.skype.com/v2/registrations` — endpoint registration
       with `transport: TROUTER`, `ttl ≥ 300 s`, refresh ≥ 30 s before expiry
 - [ ] Message envelope: framing, correlation ids, MS-CV handling
