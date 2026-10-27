@@ -75,7 +75,7 @@
 `cargo fmt --check` / `cargo doc -D warnings` all clean, `teams-cli --help` works.
 
 **Follow-ups carried forward:**
-- [ ] Install `cargo-nextest` / `cargo-deny` locally (CI already installs them).
+- [x] Install `cargo-deny` locally — done; `cargo deny check advisories licenses sources bans` passes clean. (`cargo-nextest` still to install locally; CI installs it.)
 - [ ] Push to a git remote to enable the CI workflow.
 - [ ] Decide the §0 GUI toolkit (blocks Phase 6, not Phase 2).
 
