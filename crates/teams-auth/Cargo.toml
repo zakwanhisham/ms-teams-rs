@@ -24,5 +24,8 @@ tokio.workspace = true
 keyring-core.workspace = true
 dbus-secret-service-keyring-store.workspace = true
 
+[dev-dependencies]
+wiremock.workspace = true
+
 [lints]
 workspace = true

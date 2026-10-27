@@ -98,6 +98,14 @@ impl AuthzClient {
         }
     }
 
+    /// Point the exchange at another authz endpoint — mock servers in tests, an
+    /// intercepting proxy. Production callers keep [`crate::AUTHZ_URL`] (the default).
+    #[must_use]
+    pub fn with_endpoint(mut self, url: impl Into<String>) -> Self {
+        self.url = url.into();
+        self
+    }
+
     /// Exchange a bearer token (audience `api.spaces.skype.com`) for a skypetoken + region map.
     ///
     /// # Errors
@@ -125,12 +133,13 @@ impl AuthzClient {
         let parsed: AuthzResponse = serde_json::from_str(&body)?;
         let skype_token = extract_skype_token(&parsed)
             .ok_or_else(|| AuthError::AuthzShape(crate::device_code::truncate(&body, 300)))?;
+        let expires_in = extract_expires_in(&parsed);
 
         Ok(AuthzSession {
             skype_token,
             region: parsed.region,
             region_gtms: parsed.region_gtms.unwrap_or_default().into_iter().collect(),
-            expires_in: parsed.expires_in,
+            expires_in,
             obtained_at: Some(chrono::Utc::now()),
         })
     }
@@ -151,6 +160,15 @@ fn token_string(value: &serde_json::Value) -> Option<String> {
         .as_str()
         .map(str::to_owned)
         .or_else(|| value.get("skypetoken").and_then(serde_json::Value::as_str).map(str::to_owned))
+}
+
+/// Skype-token lifetime: top-level `expiresIn` in the enterprise shape, nested next to
+/// the token object in the consumer shape (`{"skypeToken": {"expiresIn": …}}`).
+fn extract_expires_in(parsed: &AuthzResponse) -> Option<u64> {
+    let nested = |value: &Option<serde_json::Value>| {
+        value.as_ref().and_then(|v| v.get("expiresIn")).and_then(serde_json::Value::as_u64)
+    };
+    parsed.expires_in.or_else(|| nested(&parsed.tokens)).or_else(|| nested(&parsed.skype_token))
 }
 
 #[cfg(test)]
@@ -211,5 +229,22 @@ mod tests {
     fn missing_token_is_none() {
         let parsed: AuthzResponse = serde_json::from_str(r#"{"region":"EU"}"#).expect("parse");
         assert!(extract_skype_token(&parsed).is_none());
+    }
+
+    #[test]
+    fn expires_in_comes_from_top_level_or_next_to_the_token() {
+        let top: AuthzResponse = serde_json::from_str(
+            r#"{"skypeToken":{"skypetoken":"a","expiresIn":70},"expiresIn":60}"#,
+        )
+        .expect("parse");
+        assert_eq!(extract_expires_in(&top), Some(60), "top level wins");
+
+        let nested: AuthzResponse =
+            serde_json::from_str(r#"{"skypeToken":{"skypetoken":"b","expiresIn":70}}"#)
+                .expect("parse");
+        assert_eq!(extract_expires_in(&nested), Some(70), "consumer nesting is read");
+
+        let absent: AuthzResponse = serde_json::from_str(r#"{"region":"EU"}"#).expect("parse");
+        assert_eq!(extract_expires_in(&absent), None, "unknown lifetime stays unknown");
     }
 }

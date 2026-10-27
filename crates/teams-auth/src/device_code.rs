@@ -100,6 +100,9 @@ pub(crate) fn secs_to_duration(secs: u64) -> chrono::Duration {
 #[derive(Debug, Clone)]
 pub struct DeviceCodeClient {
     http: reqwest::Client,
+    /// Identity-platform base URL: [`crate::LOGIN_BASE`] in production, injectable so
+    /// tests (and proxies) can point the flow elsewhere.
+    base: String,
     /// Tenant path segment: `common`, `organizations`, `consumers` or a tenant id.
     tenant: String,
     /// OAuth client id (FOCI family client for Teams).
@@ -116,17 +119,26 @@ impl DeviceCodeClient {
                 .user_agent("ms-teams-rs/0.1 (unofficial Teams client)")
                 .build()
                 .expect("reqwest client builder only fails on invalid TLS roots"),
+            base: LOGIN_BASE.to_owned(),
             tenant: tenant.into(),
             client_id: client_id.into(),
         }
     }
 
+    /// Point the flow at another identity-platform base URL — mock servers in tests,
+    /// an intercepting proxy. Production callers keep [`crate::LOGIN_BASE`] (the default).
+    #[must_use]
+    pub fn with_login_base(mut self, base: impl Into<String>) -> Self {
+        base.into().trim_end_matches('/').clone_into(&mut self.base);
+        self
+    }
+
     fn token_url(&self) -> String {
-        format!("{}/{}/oauth2/v2.0/token", LOGIN_BASE, self.tenant)
+        format!("{}/{}/oauth2/v2.0/token", self.base, self.tenant)
     }
 
     fn devicecode_url(&self) -> String {
-        format!("{}/{}/oauth2/v2.0/devicecode", LOGIN_BASE, self.tenant)
+        format!("{}/{}/oauth2/v2.0/devicecode", self.base, self.tenant)
     }
 
     /// Step 1: request a user code for `scope`.
