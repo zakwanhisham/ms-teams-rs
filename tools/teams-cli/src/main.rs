@@ -33,6 +33,16 @@ enum Command {
         #[command(subcommand)]
         action: AuthAction,
     },
+    /// List chat/channel conversations via the chat service (Phase 2A/4)
+    Conversations {
+        /// Page size for the conversations page
+        #[arg(long, default_value_t = 5)]
+        page_size: u32,
+        /// Write the response (re-serialized, round-trip lossless) to this path for
+        /// fixture generation — only use paths under the gitignored docs/traces/
+        #[arg(long)]
+        raw_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -91,6 +101,53 @@ async fn run(cli: &Cli) -> Result<()> {
             Ok(())
         }
         Some(Command::Auth { action }) => auth(action, cli.verbose).await,
+        Some(Command::Conversations { page_size, raw_out }) => {
+            list_conversations(*page_size, raw_out.as_deref()).await
+        }
+    }
+}
+
+/// `teams-cli conversations` — live chat-service call (Phase 2A exit criterion).
+async fn list_conversations(page_size: u32, raw_out: Option<&std::path::Path>) -> Result<()> {
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
+
+    let client = teams_api::ChatClient::from_session(session)?;
+    let response = client.list_conversations(page_size).await.context("listing conversations")?;
+
+    if let Some(path) = raw_out {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, serde_json::to_vec_pretty(&response)?)?;
+        eprintln!("response written to {} (do not commit)", path.display());
+    }
+
+    print_conversation_summary(&response);
+    Ok(())
+}
+
+/// Human-readable page summary. Values print to the user's own terminal only.
+fn print_conversation_summary(list: &teams_protocol::ConversationList) {
+    let paging = match list.metadata.forward_link.as_deref() {
+        Some("") | None => "last page",
+        Some(_) => "more pages available",
+    };
+    println!(
+        "{} conversations (totalCount={:?}, {paging})",
+        list.conversations.len(),
+        list.metadata.total_count
+    );
+    for conv in &list.conversations {
+        let product = conv.product_thread_type().unwrap_or("-");
+        let topic = conv.topic().unwrap_or("<untitled>");
+        let last_activity = conv
+            .last_message
+            .as_ref()
+            .and_then(|m| m.original_arrival_time.as_deref())
+            .unwrap_or("-");
+        println!("  [{}] {} · id={}", conv.conversation_type, product, conv.id);
+        println!("      topic: {topic} · last activity: {last_activity}");
     }
 }
 
@@ -223,9 +280,9 @@ async fn fresh_spaces_token(cache: &mut TokenCache) -> Result<String> {
 
 fn identity_suffix(identity: &teams_auth::CachedIdentity) -> String {
     match (&identity.name, &identity.upn) {
-        (Some(name), Some(upn)) => format!("as {name} ({upn}), tenant {}", identity.tid),
-        (Some(name), None) => format!("as {name}, tenant {}", identity.tid),
-        (None, Some(upn)) => format!("as {upn}, tenant {}", identity.tid),
+        (Some(name), Some(upn)) => format!(" as {name} ({upn}), tenant {}", identity.tid),
+        (Some(name), None) => format!(" as {name}, tenant {}", identity.tid),
+        (None, Some(upn)) => format!(" as {upn}, tenant {}", identity.tid),
         (None, None) => format!(", tenant {}", identity.tid),
     }
 }
@@ -276,6 +333,6 @@ mod tests {
             upn: Some("u@example.com".into()),
             name: Some("User".into()),
         };
-        assert_eq!(identity_suffix(&identity), "as User (u@example.com), tenant tid-1");
+        assert_eq!(identity_suffix(&identity), " as User (u@example.com), tenant tid-1");
     }
 }

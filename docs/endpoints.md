@@ -20,7 +20,7 @@
 
 | Op | Method + path | Status |
 |----|---------------|--------|
-| List conversations | `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=1` | ⬜ |
+| List conversations | `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=0` | ✅ |
 | List messages | `GET /v1/users/ME/conversations/{conv}/messages?pageSize=N&startTime=1` | ⬜ |
 | Read one message | `GET /v1/users/ME/conversations/{conv}/messages/{id}` | ⬜ |
 | Read thread (root + replies) | `GET /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⬜ |
@@ -32,6 +32,30 @@
 | Mark read | `PUT /v1/users/ME/conversations/{conv}/properties?name=lastRead` | ⬜ |
 
 Notes:
+- **List conversations — verified live 2026-10-27** (typed model:
+  `teams_protocol::ConversationList`, fixture `crates/teams-protocol/tests/fixtures/conversations.json`).
+
+  ```bash
+  cargo run -q -p teams-cli -- conversations --page-size 5
+  # fixture source (gitignored): --raw-out docs/traces/live-conversations.json
+  ```
+
+  Caveats found live:
+  - `startTime=0` (not `1`) is what the web client sends for the first page.
+  - Root is `{_metadata, conversations}`; `_metadata` carries `syncState` / `backwardLink` /
+    `forwardLink` (479-char opaque cursor) / `totalCount`. `forwardLink: ""` = last page.
+    Pagination is **cursor-based**: pass `_metadata.syncState` back rather than `startTime`.
+  - Each item's `type` is `"Conversation"`; the real discriminator is
+    `threadProperties.productThreadType` — observed: `TeamsTeam`, `TeamsStandardChannel`,
+    `Meeting`, `StreamOfNotifications`. `threadType` distinguishes `space` (uses
+    `spaceThreadTopic`) from `topic` (channels, use `topic`).
+  - Conversation ids vary by kind: `19:…@thread.tacv2`, `19:…@thread.skype`,
+    `19:meeting_…@thread.v2`, `48:notifications` — percent-encode in paths.
+  - `lastMessage` nests a full message preview (17 keys) incl. `messagetype`,
+    `originalarrivaltime`, `rootMessageId`, `sequenceId`.
+  - Stringified booleans (`favorite`, `collapsed`, `isemptyconversation`,
+    `gapDetectionEnabled`, …) are strings, not JSON bools — `isReader`/`isCreator` *are*
+    bools. Keep the wire type as observed.
 - Server message id comes from the `Location` response header on POST (last path segment),
   falling back to `OriginalArrivalTime`. Never use the echoed `clientmessageid`.
 - `properties` is **replaced**, not merged, on edit — re-send `properties.mentions`.

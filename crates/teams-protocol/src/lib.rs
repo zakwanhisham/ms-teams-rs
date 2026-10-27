@@ -11,6 +11,13 @@
 
 #![forbid(unsafe_code)]
 
+mod conversations;
+
+pub use conversations::{
+    Conversation, ConversationList, ConversationProperties, MemberProperties, MessagePreview,
+    SyncMetadata, ThreadProperties,
+};
+
 /// Placeholder so the crate has a symbol to document/test against.
 ///
 /// Removed as soon as the first real wire types land in Phase 4.

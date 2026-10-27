@@ -52,12 +52,25 @@ Conclusions:
 
 | Step | Status | Notes |
 |---|---|---|
-| Device-code request + poll (incl. `slow_down`, decline, expiry) | 🔶 | `device_code.rs`; live login pending (needs your account) |
-| FRT → per-audience refresh | 🔶 | `DeviceCodeClient::refresh` |
-| Token cache, `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` | 🔶 | `token_cache.rs`; permissions covered by test |
-| authz exchange (both enterprise & consumer response shapes) | 🔶 | `authz.rs`; parses `tokens.skypeToken` *or* `skypeToken.skypetoken`, string or object |
-| Claim decoding (unverified, display only) | 🔶 | `jwt.rs` |
-| CLI: `teams-cli auth login/status/authz/whoami/logout` | 🔶 | never prints token values |
+| Device-code request + poll (incl. `slow_down`, decline, expiry) | ✅ | `device_code.rs`; live login succeeded (2026-10-27) |
+| FRT → per-audience refresh | ✅ | `DeviceCodeClient::refresh`; FRT (`foci`) confirmed returned by live login |
+| Token cache, `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` | ✅ | `token_cache.rs`; permissions covered by test |
+| authz exchange (both enterprise & consumer response shapes) | ✅ | `authz.rs`; live exchange succeeded, `regionGtms` map has 112 services |
+| Claim decoding (unverified, display only) | ✅ | `jwt.rs` |
+| CLI: `teams-cli auth login/status/authz/whoami/logout` | ✅ | never prints token values |
+
+### Live findings (login 2026-10-27)
+
+- `region = "apac"` for this tenant — but it is **data, not config**: always read the
+  `regionGtms` map from the authz session, never hardcode a region.
+- `regionGtms.chatService = https://apac.ng.msg.teams.microsoft.com` — host pattern
+  `https://{region}.ng.msg.teams.microsoft.com`. This is the base URL for every
+  `ChatClient` (`teams_api::ChatClient::from_session`).
+- FRT is issued and stored with a `spaces.skype` refresh; the skype token expires in ~2 h.
+- `expiresIn` is still **not** recorded: login ran outside the proxy, so the raw authz body
+  was never captured. Re-run `teams-cli auth login` under `tools/capture/` to fill this in
+  (status shows "unknown lifetime" meanwhile).
+- Graph remains unreachable through this FOCI client at device-code time (probe table).
 
 ### Endpoint notes
 
@@ -78,12 +91,13 @@ Conclusions:
 - [x] `POST /{tenant|common}/oauth2/v2.0/devicecode` → verified live (probe table above)
 - [x] `POST …/token` polling with `grant_type=urn:ietf:params:oauth:grant-type:device_code`
       (code handles pending/slow_down/declined/expired; integration-testable only via login)
-- [ ] Confirm FRT (`foci`) is returned for work **and** personal accounts — *needs your login*
+- [x] Confirm FRT (`foci`) is returned for work **and** personal accounts — work account
+      confirmed live (2026-10-27); personal still open
 - [ ] Behaviour under MFA / Conditional Access / device compliance — record exact error codes
       — *needs your login*
 
 ### Per-audience token redemption
-- [ ] `https://api.spaces.skype.com` (chat) — *after login*
+- [x] `https://api.spaces.skype.com` (chat) — FRT redemption + authz exchange live
 - [ ] `https://chatsvcagg.teams.microsoft.com` (CSA roster)
 - [ ] `https://substrate.office.com` (search)
 - [ ] `https://graph.microsoft.com` — ⚠️ blocked via device-code for this client (see above)
@@ -91,8 +105,11 @@ Conclusions:
 - [ ] Rotation semantics: is the FRT rotated on refresh? what invalidates it?
 
 ### authz exchange
-- [ ] Response shape captured live; `regionGtms` full key list recorded here
-- [ ] Enterprise vs consumer response differences — *both paths coded, one to be confirmed*
+- [x] Response shape parsed live (`region`, `regionGtms` with 112 services) — **raw body
+      still uncaptured**, so the exact `expiresIn` key and full `regionGtms` key list are
+      pending a proxied login
+- [ ] Enterprise vs consumer response differences — *enterprise path confirmed live, consumer
+      still only coded*
 - [ ] Error handling: 401/403 meanings, retry expectations
 
 ### Storage & lifecycle

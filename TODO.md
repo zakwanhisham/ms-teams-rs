@@ -96,22 +96,24 @@
             `spaces.skype/.default` (with/without `openid offline_access`) and the O365
             suite scope all issue device codes; Graph scopes are rejected
             (`AADSTS70002`). See `docs/auth.md` for the probe table.
-      - [ ] Redeem FRT per-audience: `https://api.spaces.skype.com`,
-            `https://chatsvcagg.teams.microsoft.com`, `substrate.office.com`,
-            `graph.microsoft.com` (⚠️ device-code path blocked for this client — open
-            question), **`go.trouter.io`** (needed for calls).
-            *Code exists (`DeviceCodeClient::refresh`); needs a real login to verify.*
-      - [~] **authz exchange:** implemented (`AuthzClient`, handles both known response
-            shapes: `tokens.skypeToken` and consumer `skypeToken.skypetoken`),
-            with `Authorization: Bearer …` → `{ tokens.skypeToken, region, regionGtms{…} }`.
-            **Live capture of the `regionGtms` key list still pending** — run
-            `teams-cli auth login` under the proxy (`tools/capture/README.md`) and record it.
+      - [~] Redeem FRT per-audience: `https://api.spaces.skype.com` ✅ **live**
+            (FRT → spaces token → authz succeeded), `chatsvcagg.teams.microsoft.com`,
+            `substrate.office.com`, `graph.microsoft.com` (⚠️ device-code path blocked for
+            this client — open question), **`go.trouter.io`** (needed for calls).
+      - [~] **authz exchange:** ✅ **live** (`region=apac`, `regionGtms` with 112 services,
+            `chatService = https://apac.ng.msg.teams.microsoft.com`); code handles both known
+            response shapes (`tokens.skypeToken` and consumer `skypeToken.skypetoken`).
+            **Raw body still uncaptured** — run `teams-cli auth login` under the proxy
+            (`tools/capture/README.md`) to record `expiresIn` + the `regionGtms` key list.
       - [ ] Verify token refresh semantics: expiry claims, rotation of the FRT, what a 401 means.
       - [ ] MFA / Conditional Access / personal-vs-work account behaviour — document failures
             *(needs the account owner's login session)*.
-- [ ] **Chat service (IC3 / MSNP24)** — base `{chatService}` from `regionGtms`, header
+- [~] **Chat service (IC3 / MSNP24)** — base `{chatService}` from `regionGtms`, header
       **`Authentication: skypetoken=<jwt>`** (not `Authorization`):
-      - [ ] `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=1`
+      - [x] `GET /v1/users/ME/conversations?view=msnp24Equivalent&pageSize=N&startTime=0` —
+            **verified live** 2026-10-27; typed `ConversationList` model + sanitized fixture
+            + 6 tests; `teams-cli conversations` prints the page.
+            (Web client sends `startTime=0`, not `1`; paging is via `_metadata.syncState`.)
       - [ ] `GET /v1/users/ME/conversations/{id}/messages?pageSize=N&startTime=1`
       - [ ] `POST /v1/users/ME/conversations/{id}/messages` (+ `;messageid={root}` for replies)
       - [ ] `PUT …/messages/{id}` (edit, `skypeeditedid`), `DELETE`, reactions via
@@ -200,18 +202,22 @@ audio, and `docs/calls.md` exists with a **GO** verdict. Re-evaluate the whole t
 
 ## Phase 4 — `teams-protocol` + `teams-api` (read path)
 
-- [ ] Strongly-typed models: `Conversation`, `Channel`, `Message`, `User`, `Mention`,
-      `Reaction`, `MessageKind` (text/code/image/system), `EventMessage`.
-- [ ] Serde deserializers tolerant of unknown fields (`#[serde(default)]`, ignore-unknown) —
-      the API *will* change under you.
+- [~] Strongly-typed models: `Conversation`/`ConversationList`/`MessagePreview` ✅ (wire types
+      in `teams-protocol/src/conversations.rs`); `Channel`, `Message`, `User`, `Mention`,
+      `Reaction`, `MessageKind` (text/code/image/system), `EventMessage` still open.
+- [x] Serde deserializers tolerant of unknown fields (`#[serde(default)]`, ignore-unknown) —
+      enforced by tests for the conversation types; keep doing it per type.
 - [ ] `ChatClient` with methods:
-      - [ ] `list_conversations(paging)` — merge chats + channels
+      - [x] `list_conversations(page_size)` — typed `ConversationList`, chats + channels in
+            one page (verified live; `teams_api::ChatClient::from_session` builds it from the
+            cached authz session)
       - [ ] `list_messages(conv, before, page_size)`
       - [ ] `get_message(conv, id)` / `get_thread(conv, root_id)` (via `;messageid=`)
       - [ ] `roster()` (CSA), `search_people(q)` (substrate)
-- [ ] Central `ApiClient` handling: base URL from `regionGtms`, correct auth header per service,
-      MS-CV correlation vectors, User-Agent, retries with jittered exponential backoff,
-      429/`Retry-After`, structured `ApiError::{Http{status, body}, Auth, Decode, Network}`.
+- [~] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
+      correct auth header per service (`Authentication` vs `Authorization`) ✅, `ApiError`
+      ✅; MS-CV correlation vectors, retries with jittered exponential backoff and
+      429/`Retry-After` still open.
 - [ ] HTML content model: parse Teams wire HTML → internal `RichText` AST (so the GUI can render
       it natively rather than embedding a webview). Crates: `scraper` or `html5ever` + custom walker.
       - [ ] mentions, bold/italic/underline/strike, links, code blocks, blockquote, lists,

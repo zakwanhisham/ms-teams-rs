@@ -1,0 +1,133 @@
+{
+  "_metadata": {
+    "backwardLink": "<redacted>",
+    "forwardLink": "<redacted>",
+    "syncState": "<redacted>",
+    "totalCount": 5
+  },
+  "conversations": [
+    {
+      "id": "<redacted>",
+      "lastMessage": {
+        "clientmessageid": "2040975658407849439",
+        "composetime": "<redacted>",
+        "content": "<redacted>",
+        "conversationLink": "<redacted>",
+        "conversationid": "<redacted>",
+        "from": "<redacted>",
+        "fromDisplayNameInToken": "<redacted>",
+        "fromFamilyNameInToken": "<redacted>",
+        "fromGivenNameInToken": "<redacted>",
+        "id": "1793085256125",
+        "imdisplayname": "<redacted>",
+        "messagetype": "RichText/Html",
+        "originalarrivaltime": "<redacted>",
+        "rootMessageId": "1793058838818",
+        "sequenceId": 741,
+        "type": "Message",
+        "version": "1793085256125"
+      },
+      "lastRcMetadataVersion": 0,
+      "lastUpdatedMessageId": 0,
+      "lastUpdatedMessageVersion": 0,
+      "memberProperties": {
+        "isReader": false,
+        "memberExpirationTime": 0,
+        "role": "User"
+      },
+      "messages": "<redacted>",
+      "properties": {
+        "addedBy": "<redacted>",
+        "addedByTenantId": "<redacted>",
+        "collapsed": "false",
+        "consumptionhorizon": "<redacted>",
+        "favorite": "true",
+        "isemptyconversation": "False",
+        "lastTimeFavorited": "1790784346318",
+        "lastimreceivedtime": "<redacted>"
+      },
+      "targetLink": "<redacted>",
+      "threadProperties": {
+        "createdat": "<redacted>",
+        "gapDetectionEnabled": "True",
+        "groupId": "<redacted>",
+        "isCreator": false,
+        "lastSequenceId": "741",
+        "lastjoinat": "1739496317553",
+        "ongoingCallChatEnforcement": "true",
+        "originalThreadId": "<redacted>",
+        "productThreadType": "TeamsTeam",
+        "rosterVersion": 0,
+        "sharepointSiteUrl": "<redacted>",
+        "spaceThreadTopic": "<redacted>",
+        "spaceType": "standard",
+        "threadType": "space",
+        "version": "1785721040400"
+      },
+      "type": "Conversation",
+      "version": 0
+    },
+    {
+      "id": "<redacted>",
+      "lastMessage": {
+        "clientmessageid": "2180928545427471126",
+        "composetime": "<redacted>",
+        "content": "<redacted>",
+        "conversationLink": "<redacted>",
+        "conversationid": "<redacted>",
+        "from": "<redacted>",
+        "fromDisplayNameInToken": "<redacted>",
+        "fromFamilyNameInToken": "<redacted>",
+        "fromGivenNameInToken": "<redacted>",
+        "id": "1793068074661",
+        "imdisplayname": "<redacted>",
+        "messagetype": "RichText/Html",
+        "originalarrivaltime": "<redacted>",
+        "rootMessageId": "1793068074661",
+        "sequenceId": 115,
+        "type": "Message",
+        "version": "1793068074661"
+      },
+      "lastRcMetadataVersion": 0,
+      "lastUpdatedMessageId": 0,
+      "lastUpdatedMessageVersion": 0,
+      "memberProperties": {
+        "isFollowing": false,
+        "isReader": false,
+        "memberExpirationTime": 0,
+        "role": "User"
+      },
+      "messages": "<redacted>",
+      "properties": {
+        "addedBy": "<redacted>",
+        "addedByTenantId": "<redacted>",
+        "consumptionhorizon": "<redacted>",
+        "favorite": "true",
+        "isemptyconversation": "False",
+        "isfollowed": "<redacted>",
+        "lastTimeFavorited": "1793091028239",
+        "lastimreceivedtime": "<redacted>"
+      },
+      "targetLink": "<redacted>",
+      "threadProperties": {
+        "createdat": "<redacted>",
+        "gapDetectionEnabled": "True",
+        "groupId": "<redacted>",
+        "isCreator": false,
+        "lastSequenceId": "115",
+        "lastjoinat": "1731293560427",
+        "originalThreadId": "<redacted>",
+        "privacy": "<redacted>",
+        "productThreadType": "TeamsStandardChannel",
+        "rosterVersion": 0,
+        "spaceId": "<redacted>",
+        "threadType": "topic",
+        "topic": "<redacted>",
+        "topicThreadTopic": "<redacted>",
+        "version": "1737195734339"
+      },
+      "type": "Conversation",
+      "version": 0
+    }
+  ]
+}
