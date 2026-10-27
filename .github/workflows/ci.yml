@@ -35,11 +35,19 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    env:
+      # Make the keyring credential-store tests fail (not skip) when the Secret Service
+      # below did not come up, so CI never goes green with the backend untested.
+      TEAMS_RS_REQUIRE_KEYRING: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
+      # Unlocked Secret Service for the keyring store tests (recipe from keyring-rs CI):
+      # the login-keyring password is fake, it only has to be unlocked once.
+      - run: sudo apt-get update && sudo apt-get install -y gnome-keyring
+      - run: gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
       - run: cargo nextest run --workspace --all-features
       - run: cargo test --workspace --doc
 
