@@ -117,12 +117,19 @@ Conclusions:
       pending a proxied login
 - [ ] Enterprise vs consumer response differences — *enterprise path confirmed live, consumer
       still only coded*
-- [ ] Error handling: 401/403 meanings, retry expectations
+- [~] Error handling: 401/403 meanings, retry expectations — **401 observed live** on the
+      chat service as `{"errorCode":911,"message":"Authentication failed."}` (and plain
+      401s from CSA/substrate) and now recovered automatically (evict → re-mint → replay
+      once, live-verified 2026-10-27); retry expectations codified in `docs/endpoints.md`
+      (backoff only on 429/502/503/504). 403 meanings still unobserved.
 
 ### Storage & lifecycle
 - [x] Cache file: `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` (tested)
-- [x] Refresh 300 s before expiry; on chat 401 → evict → re-mint → retry once (401-retry hook
-      lands with `teams-api` in Phase 4)
+- [x] Refresh 300 s before expiry; on 401 → evict → re-mint → retry once — **landed and
+      live-verified 2026-10-27**: a poisoned skypetoken recovered via
+      `teams_api::AuthzRefresher` (evict spaces → FRT redemption → authz exchange) and a
+      poisoned-but-locally-fresh CSA bearer via `teams_api::AudienceRefresher`
+      (`TokenCache::evict` keeps the FRT), each replaying exactly once
 - [x] `teams-cli auth login | logout | status | whoami | authz`
 
 ## Open questions

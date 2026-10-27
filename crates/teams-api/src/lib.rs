@@ -11,16 +11,19 @@
 //! | Files (ASM) | `api.asm.skype.com` | `Authorization: skypetoken <jwt>` |
 //!
 //! Rules: base URLs always come from the authz `regionGtms` map (never hardcoded regions),
-//! retries use jittered exponential backoff with `Retry-After` support, and every failure
-//! maps into `ApiError`.
+//! retries use jittered exponential backoff with `Retry-After` support, a 401 is recovered
+//! by evict → re-mint → replay-once ([`TokenRefresher`]), and every failure maps into
+//! [`ApiError`].
 
 #![forbid(unsafe_code)]
 
 mod mscv;
+mod refresh;
 mod retry;
 mod service;
 
 pub use mscv::{CorrelationVector, MS_CV_HEADER};
+pub use refresh::{AudienceRefresher, AuthzRefresher, RefreshFuture, TokenRefresher};
 pub use retry::{RetryPolicy, parse_retry_after};
 pub(crate) use service::HttpService;
 
@@ -41,6 +44,10 @@ pub enum ApiError {
     /// Transport-level failure (DNS, TLS, timeout, …).
     #[error("http request failed: {0}")]
     Http(#[from] reqwest::Error),
+
+    /// Credential recovery failed while handling a 401 (evict → re-mint path).
+    #[error("auth: {0}")]
+    Auth(#[from] teams_auth::AuthError),
 
     /// Non-2xx response from a Teams service.
     #[error("service returned {status}: {body}")]
@@ -97,6 +104,15 @@ impl ChatClient {
     #[must_use]
     pub fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
         self.service = self.service.with_retry_policy(policy);
+        self
+    }
+
+    /// Attach 401 recovery: on a rejected credential the client evicts → re-mints through
+    /// the [`TokenRefresher`] and replays the request **exactly once** (a second 401
+    /// surfaces as [`ApiError::Status`]; a failing re-mint surfaces as [`ApiError::Auth`]).
+    #[must_use]
+    pub fn with_refresher(mut self, refresher: impl TokenRefresher + 'static) -> Self {
+        self.service = self.service.with_refresher(refresher);
         self
     }
 
@@ -241,6 +257,15 @@ impl RosterClient {
         self
     }
 
+    /// Attach 401 recovery: on a rejected credential the client evicts → re-mints through
+    /// the [`TokenRefresher`] and replays the request **exactly once** (a second 401
+    /// surfaces as [`ApiError::Status`]; a failing re-mint surfaces as [`ApiError::Auth`]).
+    #[must_use]
+    pub fn with_refresher(mut self, refresher: impl TokenRefresher + 'static) -> Self {
+        self.service = self.service.with_refresher(refresher);
+        self
+    }
+
     /// Build from a cached authz session: base URL from `regionGtms.chatSvcAggAfd`, token
     /// from the caller (minted for the `chatsvcagg` audience via
     /// [`teams_auth::TokenCache::fresh_or_redeem`]).
@@ -338,6 +363,15 @@ impl SubstrateClient {
     #[must_use]
     pub fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
         self.service = self.service.with_retry_policy(policy);
+        self
+    }
+
+    /// Attach 401 recovery: on a rejected credential the client evicts → re-mints through
+    /// the [`TokenRefresher`] and replays the request **exactly once** (a second 401
+    /// surfaces as [`ApiError::Status`]; a failing re-mint surfaces as [`ApiError::Auth`]).
+    #[must_use]
+    pub fn with_refresher(mut self, refresher: impl TokenRefresher + 'static) -> Self {
+        self.service = self.service.with_refresher(refresher);
         self
     }
 

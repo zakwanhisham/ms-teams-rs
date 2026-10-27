@@ -12,19 +12,28 @@ client uses, with real Linux desktop integration (notifications, tray, deep link
 
 ## Status
 
-Early scaffolding — **Phase 1 of [TODO.md](TODO.md)** complete: workspace, CI, docs scaffold.
-Nothing is functional yet. The plan (with go/no-go checkpoints) lives in [`TODO.md`](TODO.md).
+The **terminal read path works, live-verified end to end** — Phases 1–2A plus the exit
+criteria of Phases 3 and 4 in [TODO.md](TODO.md): device-code login for a real work
+account, a `0600` family-refresh-token (FRT) cache, authz/region discovery, and typed
+reads for conversations, message history/threads, the team/channel roster and people
+search — each with a sanitized fixture, `MS-CV` correlation vectors, throttling backoff
+(mock-tested) and automatic 401 credential recovery (evict → re-mint → replay once,
+live-verified by poisoning the cached credentials).
+
+Not started: realtime/write path, GUI, desktop integration, Graph extras. **Calls
+(Phases 2B/8) are gated on network captures from the official client** — see
+[`TODO.md`](TODO.md), which remains the plan with go/no-go checkpoints.
 
 | Phase | Milestone | Status |
 |------:|-----------|--------|
 | 1 | Workspace + CI + docs scaffold | ✅ |
-| 2 | Protocol spike (auth/chat **and** calls → GO/NO-GO) | 🔄 harness + probes done; captures need your login |
-| 3 | `teams-auth` — device-code login, token cache, authz | ⬜ |
-| 4 | `teams-protocol` + `teams-api` — read path | ⬜ |
+| 2 | Protocol spike (auth/chat **and** calls → GO/NO-GO) | 🔄 2A live-verified; 2B waits on your captures |
+| 3 | `teams-auth` — device-code login, token cache, authz | ✅ exit criteria met; keyring backend open |
+| 4 | `teams-protocol` + `teams-api` — read path | ✅ exit criteria met; RichText AST open |
 | 5 | `teams-realtime` + write path | ⬜ |
 | 6 | GUI chat client | ⬜ |
 | 7 | Desktop integration (notifications, tray, packaging) | ⬜ |
-| 8 | Calls & meetings (1:1 → group → meetings) | ⬜ |
+| 8 | Calls & meetings (1:1 → group → meetings) | ⬜ gated on Phase 2B |
 | 9 | Graph extras (calendar, mail, uploads, search) | ⬜ |
 
 ## Workspace layout

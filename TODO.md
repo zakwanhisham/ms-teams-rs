@@ -213,9 +213,13 @@ work-account login ran through it (2026-10-27).**
       covers transport / identity / authz / parse failures (concrete variants are `Http`,
       `Identity`, `DeviceCode`, `Authz`, `Parse` rather than the sketch above); both known
       response shapes handled; verified live (`region=apac`, 112 `regionGtms` services).
-- [~] Auto-refresh: ✅ refresh skew implemented (`is_expired(300)` + expired-token filtering
-      on load). **Not yet wired:** on chat 401 → evict session → re-mint → retry once — a 401
-      currently surfaces straight to the caller as `ApiError::Status`.
+- [x] Auto-refresh: refresh skew implemented (`is_expired(300)` + expired-token filtering
+      on load) **and** the 401 hook is wired and **live-verified 2026-10-27**: a rejected
+      credential (observed as chat 401 `errorCode:911`, and a poisoned-but-locally-fresh
+      CSA bearer) → `TokenCache::evict` (keeps the FRT) → re-mint
+      (`teams_api::AuthzRefresher` / `AudienceRefresher`) → replay exactly once; wired
+      into all four `teams-cli` read commands, mocked-HTTP tests in
+      `crates/teams-api/tests/refresh.rs`.
 - [x] `teams-cli auth login | logout | status | whoami | authz | mint` (`mint` redeems a
       cached FRT for another audience and prints its claims — never the token) (JWT claims decoded for
       display only, no signature verification; token values are never printed).
@@ -450,8 +454,8 @@ shippable. Build under `crates/teams-call`, UI under `apps/teams-gui`.*
 1. **M0** Skeleton + CI + docs scaffold *(Phase 1)* ✅
 2. **M1a** Chat/auth spike + docs *(Phase 2A)* — ✅ live chat read path proven
 3. **M1b** **Call protocol spike → GO/NO-GO decision** *(Phase 2B)* — ⏳ needs the account owner's captures
-4. **M2** Auth works end-to-end from the CLI *(Phase 3)* ✅ — exit criteria met; keyring backend + 401-retry hook open
-5. **M3** Read messages from the terminal *(Phase 4)* ✅ — exit criteria met; RichText AST, roster/search, retries open
+4. **M2** Auth works end-to-end from the CLI *(Phase 3)* ✅ — exit criteria met; 401-retry hook ✅ live-verified, keyring backend open
+5. **M3** Read messages from the terminal *(Phase 4)* ✅ — exit criteria met; roster/search/MS-CV/retries ✅, RichText AST + remaining typed models open
 6. **M4** Realtime + send messages *(Phase 5)*
 7. **M5** GUI chat client usable daily *(Phase 6)*
 8. **M6** Packaged, tray + notifications + incoming-call ringing *(Phase 7)*

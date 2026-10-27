@@ -211,7 +211,8 @@ async fn history(
 
     let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
     let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
-    let client = teams_api::ChatClient::from_session(session)?;
+    let client = teams_api::ChatClient::from_session(session)?
+        .with_refresher(teams_api::AuthzRefresher::new());
 
     if let Some(root) = root {
         let thread = client.get_thread(conv, root, page_size).await.context("fetching thread")?;
@@ -245,7 +246,8 @@ async fn roster(raw_out: Option<&std::path::Path>) -> Result<()> {
         .context("minting CSA bearer")?;
     cache.save().context("saving token cache")?;
 
-    let client = teams_api::RosterClient::from_session(&session, bearer)?;
+    let client = teams_api::RosterClient::from_session(&session, bearer)?
+        .with_refresher(teams_api::AudienceRefresher::new(AUDIENCE_CSA, SCOPE_CSA));
     let roster = client.roster().await.context("fetching CSA roster")?;
     dump_raw(&serde_json::to_value(&roster)?, raw_out)?;
     print_roster_summary(&roster);
@@ -263,7 +265,8 @@ async fn search_people(query: &str, limit: u32, raw_out: Option<&std::path::Path
         .context("minting substrate bearer")?;
     cache.save().context("saving token cache")?;
 
-    let client = teams_api::SubstrateClient::new(bearer)?;
+    let client = teams_api::SubstrateClient::new(bearer)?
+        .with_refresher(teams_api::AudienceRefresher::new(AUDIENCE_SUBSTRATE, SCOPE_SUBSTRATE));
     let hits = client.search_people(query, limit).await.context("searching people")?;
     dump_raw(&serde_json::to_value(&hits)?, raw_out)?;
     print_search_summary(&hits);
@@ -427,7 +430,8 @@ async fn list_conversations(page_size: u32, raw_out: Option<&std::path::Path>) -
     let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
     let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
 
-    let client = teams_api::ChatClient::from_session(session)?;
+    let client = teams_api::ChatClient::from_session(session)?
+        .with_refresher(teams_api::AuthzRefresher::new());
     let response = client.list_conversations(page_size).await.context("listing conversations")?;
 
     if let Some(path) = raw_out {

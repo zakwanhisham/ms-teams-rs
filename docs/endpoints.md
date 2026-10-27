@@ -21,6 +21,14 @@
   `teams-api::HttpService` (one `CorrelationVector` per client, extension incremented per
   attempt; the chat service echoes `MS-CV` extended with its own `.0` component, observed
   live 2026-10-27) and used by every read path.
+- **401 handling**: never blind-retry it — the credential is dead. The client evicts the
+  rejected token and re-mints it (`teams_api::AuthzRefresher` re-runs the authz exchange,
+  `AudienceRefresher` redeems the FRT from the on-disk cache; both persist the new
+  credential), then replays the request **exactly once**; a second 401 surfaces to the
+  caller. Observed live: the chat service answers 401 with
+  `{"errorCode":911,"message":"Authentication failed."}`; both recovery paths were
+  live-verified 2026-10-27 by poisoning the cached credential. Backoff (429/502/503/504)
+  and transport errors remain deliberately un-retried — see `crates/teams-api/src/retry.rs`.
 - Response bodies in fixtures are sanitized.
 
 ## Chat service (IC3 / MSNP24)
