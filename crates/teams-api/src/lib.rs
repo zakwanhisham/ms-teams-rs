@@ -5,7 +5,7 @@
 //! | Service | Base URL source | Auth header |
 //! |---------|-----------------|-------------|
 //! | Chat (IC3 / MSNP24) | `regionGtms.chatService` from authz | `Authentication: skypetoken=<jwt>` |
-//! | Roster (CSA) | `teams.microsoft.com/api/csa/{region}/…` | `Authorization: Bearer <jwt>` |
+//! | Roster (CSA) | `regionGtms.chatSvcAggAfd` from authz | `Authorization: Bearer <jwt>` |
 //! | People search (substrate) | `substrate.office.com/search/…` | `Authorization: Bearer <jwt>` |
 //! | Calendar / mail (Graph) | `graph.microsoft.com/v1.0` | `Authorization: Bearer <jwt>` |
 //! | Files (ASM) | `api.asm.skype.com` | `Authorization: skypetoken <jwt>` |
@@ -76,15 +76,12 @@ impl ChatClient {
     /// [`ApiError::Url`] when `base_url` is not a valid absolute URL,
     /// [`ApiError::Http`] when the HTTP client cannot be built (invalid TLS roots).
     pub fn new(base_url: &str, skypetoken: impl Into<String>) -> Result<Self, ApiError> {
-        let mut base = url::Url::parse(base_url)?;
-        base.set_query(None);
-        base.set_fragment(None);
         Ok(Self {
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .user_agent(USER_AGENT)
                 .build()?,
-            base,
+            base: normalize_base(base_url)?,
             skypetoken: skypetoken.into(),
         })
     }
@@ -211,6 +208,115 @@ impl ChatClient {
     }
 }
 
+/// Team/channel roster client (CSA — chat service aggregator).
+///
+/// The base URL comes from the authz `regionGtms.chatSvcAggAfd` entry (region-encoded at
+/// runtime, e.g. `…/api/csa/apac`) and every request carries a plain OAuth bearer
+/// (`Authorization: Bearer <jwt>`) for the `chatsvcagg.teams.microsoft.com` audience —
+/// not a skypetoken.
+#[derive(Debug)]
+pub struct RosterClient {
+    http: reqwest::Client,
+    base: url::Url,
+    /// Never logged, never serialized, never exposed to the GUI.
+    bearer: String,
+}
+
+impl RosterClient {
+    /// Build a client for a CSA base URL (e.g. `https://teams.microsoft.com/api/csa/apac`).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Url`] when `base_url` is not a valid absolute URL,
+    /// [`ApiError::Http`] when the HTTP client cannot be built (invalid TLS roots).
+    pub fn new(base_url: &str, bearer: impl Into<String>) -> Result<Self, ApiError> {
+        Ok(Self {
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent(USER_AGENT)
+                .build()?,
+            base: normalize_base(base_url)?,
+            bearer: bearer.into(),
+        })
+    }
+
+    /// Build from a cached authz session: base URL from `regionGtms.chatSvcAggAfd`, token
+    /// from the caller (minted for the `chatsvcagg` audience via
+    /// [`teams_auth::TokenCache::fresh_or_redeem`]).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Config`] when the session has no `chatSvcAggAfd` entry, plus the errors
+    /// of [`RosterClient::new`].
+    pub fn from_session(
+        session: &teams_auth::AuthzSession,
+        bearer: impl Into<String>,
+    ) -> Result<Self, ApiError> {
+        let base = session
+            .host("chatSvcAggAfd")
+            .ok_or_else(|| ApiError::Config("authz session has no chatSvcAggAfd entry".into()))?;
+        Self::new(base, bearer)
+    }
+
+    /// Team/channel roster (Phase 4 read path), typed.
+    ///
+    /// `GET {base}/api/v1/teams/users/me/updates?isPrefetch=false&enableMembershipSummary=true`
+    ///
+    /// The response also carries the caller's chats and scheduled meetings (with their join
+    /// URLs), so this is the one call that answers "what is in my Teams?".
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on non-2xx (401 = CSA bearer expired → `teams-cli auth mint`),
+    /// [`ApiError::Json`] on malformed JSON or an unparseable typed shape, [`ApiError::Http`]
+    /// on transport failure.
+    pub async fn roster(&self) -> Result<teams_protocol::RosterUpdate, ApiError> {
+        let value = self.get(team_updates_path()).await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// `GET {base}/{path}` with the CSA bearer, returning parsed JSON.
+    async fn get(&self, path: &str) -> Result<Value, ApiError> {
+        let url = self.base.join(path)?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", format!("Bearer {}", self.bearer))
+            .header("Accept", "application/json")
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let body = resp.text().await?;
+        if !status.is_success() {
+            // Never log the body verbatim: service errors can echo request context.
+            tracing::warn!(status = status.as_u16(), body_len = body.len(), "CSA service error");
+            return Err(ApiError::Status {
+                status: status.as_u16(),
+                body: crate::truncate(&body, 300),
+            });
+        }
+        Ok(serde_json::from_str(&body)?)
+    }
+}
+
+/// Parse a service base URL for `Url::join`-based path building.
+///
+/// Drops query/fragment and guarantees a trailing `/` on the path: the CSA base ends in a
+/// region segment (`…/api/csa/apac`) and `Url::join("api/v1/…")` would otherwise *replace*
+/// `apac` instead of appending after it.
+fn normalize_base(base_url: &str) -> Result<url::Url, ApiError> {
+    let mut base = url::Url::parse(base_url)?;
+    base.set_query(None);
+    base.set_fragment(None);
+    if !base.path().ends_with('/') {
+        let mut path = base.path().to_owned();
+        path.push('/');
+        base.set_path(&path);
+    }
+    Ok(base)
+}
+
 /// `GET /v1/users/ME/conversations` page path (`msnp24Equivalent` view, first page).
 fn conversations_path(page_size: u32) -> String {
     format!("v1/users/ME/conversations?view=msnp24Equivalent&pageSize={page_size}&startTime=0")
@@ -241,6 +347,11 @@ fn message_path(conv: &str, message_id: &str) -> String {
         encode_path_segment(conv),
         encode_path_segment(message_id)
     )
+}
+
+/// Team/channel roster path under the CSA base (`…/api/csa/{region}/`).
+fn team_updates_path() -> &'static str {
+    "api/v1/teams/users/me/updates?isPrefetch=false&enableMembershipSummary=true"
 }
 
 /// Percent-encode one path segment.
@@ -294,6 +405,24 @@ mod tests {
     #[test]
     fn bad_base_url_is_rejected() {
         assert!(matches!(ChatClient::new("not a url", "jwt"), Err(ApiError::Url(_))));
+    }
+
+    /// `Url::join` replaces the last path segment; the trailing slash is what makes the
+    /// CSA base (`…/api/csa/apac`) append instead.
+    #[test]
+    fn base_urls_are_join_safe() {
+        let base = normalize_base("https://teams.microsoft.com/api/csa/apac").expect("url");
+        assert_eq!(
+            base.join(team_updates_path()).expect("join").as_str(),
+            "https://teams.microsoft.com/api/csa/apac/api/v1/teams/users/me/updates\
+             ?isPrefetch=false&enableMembershipSummary=true"
+        );
+
+        let chat = normalize_base("https://apac.ng.msg.teams.microsoft.com").expect("url");
+        assert_eq!(
+            chat.join("v1/users/ME/conversations").expect("join").as_str(),
+            "https://apac.ng.msg.teams.microsoft.com/v1/users/ME/conversations"
+        );
     }
 
     #[test]

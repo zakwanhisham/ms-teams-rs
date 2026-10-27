@@ -62,6 +62,13 @@ enum Command {
         #[arg(long)]
         raw_out: Option<std::path::PathBuf>,
     },
+    /// Team/channel roster via CSA (Phase 4 read path)
+    Roster {
+        /// Write the response JSON to this path (contains team/channel names — only use
+        /// paths under the gitignored docs/traces/, never commit the output)
+        #[arg(long)]
+        raw_out: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -167,6 +174,7 @@ async fn run(cli: &Cli) -> Result<()> {
         Some(Command::History { conv, page_size, root, message, raw_out }) => {
             history(conv, *page_size, root.as_deref(), message.as_deref(), raw_out.as_deref()).await
         }
+        Some(Command::Roster { raw_out }) => roster(raw_out.as_deref()).await,
     }
 }
 
@@ -207,6 +215,70 @@ async fn history(
     dump_raw(&serde_json::to_value(&page)?, raw_out)?;
     print_message_summary(&page);
     Ok(())
+}
+
+/// `teams-cli roster` — team/channel list via CSA (Phase 4 read path).
+async fn roster(raw_out: Option<&std::path::Path>) -> Result<()> {
+    let mut cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.clone().context("no authz session — run `teams-cli auth authz`")?;
+
+    // Bearer for the chatsvcagg audience, minted from the family refresh token on first use.
+    let bearer = cache
+        .fresh_or_redeem(AUDIENCE_CSA, SCOPE_CSA, "common")
+        .await
+        .context("minting CSA bearer")?;
+    cache.save().context("saving token cache")?;
+
+    let client = teams_api::RosterClient::from_session(&session, bearer)?;
+    let roster = client.roster().await.context("fetching CSA roster")?;
+    dump_raw(&serde_json::to_value(&roster)?, raw_out)?;
+    print_roster_summary(&roster);
+    Ok(())
+}
+
+/// Teams, channels and upcoming chats at a glance. Values print to the user's own terminal.
+fn print_roster_summary(roster: &teams_protocol::RosterUpdate) {
+    println!(
+        "{} teams · {} channels (merged) · {} chats · partial={}",
+        roster.teams.len(),
+        roster.all_channels().len(),
+        roster.chats.len(),
+        roster.metadata.is_partial_data.unwrap_or(false),
+    );
+    for team in &roster.teams {
+        let counts =
+            team.membership_summary.as_ref().map_or(0, |s| s.total_member_count.unwrap_or(0));
+        let channels = team.channels.len();
+        let general = team.general_channel().is_some();
+        println!(
+            "  [{}] {} · channels={} (general={general}) · members={counts} · id={}",
+            team.member_role_string.as_deref().unwrap_or("-"),
+            team.display_name.as_deref().unwrap_or("<untitled>"),
+            channels,
+            team.id.as_deref().unwrap_or("-"),
+        );
+    }
+    let meetings =
+        roster.chats.iter().filter(|chat| chat.chat_type.as_deref() == Some("meeting")).count();
+    println!(
+        "  chats: {meetings} meeting(s), {} other · next: {}",
+        roster.chats.len() - meetings,
+        roster
+            .chats
+            .iter()
+            .filter(|chat| chat.chat_type.as_deref() == Some("meeting"))
+            .filter_map(|chat| chat.meeting_information.as_ref())
+            .filter(|info| !info.is_cancelled.unwrap_or(true))
+            .map(|info| {
+                format!(
+                    "{} → {}",
+                    info.start_time.as_deref().unwrap_or("?"),
+                    info.end_time.as_deref().unwrap_or("?")
+                )
+            })
+            .next()
+            .unwrap_or_else(|| "-".into()),
+    );
 }
 
 /// Write a response to `--raw-out` (gitignored `docs/traces/` only — never commit).

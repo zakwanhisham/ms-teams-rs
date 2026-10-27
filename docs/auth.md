@@ -72,6 +72,10 @@ Conclusions:
   was never captured. Re-run `teams-cli auth login` under `tools/capture/` to fill this in
   (status shows "unknown lifetime" meanwhile).
 - Graph remains unreachable through this FOCI client at device-code time (probe table).
+- **Second audience minted live (2026-10-27)**: the family refresh token redeems directly
+  for `openid offline_access https://chatsvcagg.teams.microsoft.com/.default` →
+  `aud=https://chatsvcagg.teams.microsoft.com`, `scp=user_impersonation`. That bearer is what
+  `teams_api::RosterClient` sends (`teams-cli auth mint` performs the redemption).
 
 ### Endpoint notes
 
@@ -99,7 +103,8 @@ Conclusions:
 
 ### Per-audience token redemption
 - [x] `https://api.spaces.skype.com` (chat) — FRT redemption + authz exchange live
-- [ ] `https://chatsvcagg.teams.microsoft.com` (CSA roster)
+- [x] `https://chatsvcagg.teams.microsoft.com` (CSA roster) — FRT redemption live
+      (2026-10-27), `scp=user_impersonation`; consumed by `teams-cli roster`
 - [ ] `https://substrate.office.com` (search)
 - [ ] `https://graph.microsoft.com` — ⚠️ blocked via device-code for this client (see above)
 - [ ] `go.trouter.io` (calls — needed by Phase 2B)

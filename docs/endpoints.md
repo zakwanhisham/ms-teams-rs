@@ -11,6 +11,8 @@
 - **Chat base URL**: `regionGtms.chatService` from the authz response (e.g.
   `https://<region>.ng.msg.teams.microsoft.com`) — **never hardcode a region**.
 - **Chat auth header**: `Authentication: skypetoken=<jwt>` (note: *not* `Authorization`).
+- **CSA base URL**: `regionGtms.chatSvcAggAfd` (e.g. `https://teams.microsoft.com/api/csa/<region>`)
+  — the region is already part of the base; bearer audience `chatsvcagg.teams.microsoft.com`.
 - **Bearer services**: `Authorization: Bearer <jwt>`, audience-specific token.
 - Conversation ids contain `:` `@` `;` → the service writes them into paths **raw** (its
   own `messagesLink` values do), so `teams-api` keeps them raw and percent-encodes only
@@ -143,11 +145,52 @@ Subscribed resources (web client): `/v1/threads/ALL`, `/v1/users/ME/contacts/ALL
 
 | Op | Method + path | Audience | Status |
 |----|---------------|----------|--------|
-| Team/channel roster | `GET https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/updates` | `chatsvcagg.teams.microsoft.com` | ⬜ |
+| Team/channel roster | `GET {csa}/api/v1/teams/users/me/updates?isPrefetch=false&enableMembershipSummary=true` | `chatsvcagg.teams.microsoft.com` | ✅ |
 | People search | `POST https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar` | `substrate.office.com` (needs `Origin`/`Referer`!) | ⬜ |
 | Calendar view | `GET https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=&endDateTime=` | `graph.microsoft.com` | ⬜ |
 | Mail | `GET https://graph.microsoft.com/v1.0/me/messages` | `graph.microsoft.com` | ⬜ |
 | Profile | `GET https://graph.microsoft.com/v1.0/me` | `graph.microsoft.com` | ⬜ |
+
+### Team/channel roster (CSA) — verified live 2026-10-27
+
+Typed as `teams_protocol::RosterUpdate` (fixture `crates/teams-protocol/tests/fixtures/roster.json`),
+client `teams_api::RosterClient`.
+
+```bash
+teams-cli auth mint    # FRT → chatsvcagg bearer, cached under `chatsvcagg`
+teams-cli roster --raw-out docs/traces/live-roster.json
+```
+
+- **Base URL is data**: `regionGtms.chatSvcAggAfd` (observed
+  `https://teams.microsoft.com/api/csa/apac`) — the region is the last path segment of the
+  base, so the request is `{base}/api/v1/teams/users/me/updates?…`. `RosterClient` forces a
+  trailing `/` on the base before `Url::join`, otherwise the join would *replace* the region
+  segment instead of appending after it.
+- **Auth**: plain `Authorization: Bearer <jwt>` with `aud:
+  https://chatsvcagg.teams.microsoft.com`, redeemed from the family refresh token
+  (`teams-cli auth mint`, scope
+  `openid offline_access https://chatsvcagg.teams.microsoft.com/.default`). No skypetoken, no
+  `Origin`/`Referer`, no `x-skypetoken` were needed — bearer alone worked.
+- **Teams list only their General channel** (`channels[0].isGeneral == true`, 1 channel each
+  in all five observed teams). Channels reported outside any team arrive in the top-level
+  `channels` array with `parentTeamId` set. Merge both: `RosterUpdate::all_channels()`
+  deduplicates by thread id. Anything else has to come from the chat-service conversation
+  list (`GET /v1/users/ME/conversations`).
+- **`chats` doubles as the meeting list**: 64 entries observed (31 `chatType: "meeting"`),
+  meetings carrying `meetingInformation` with `meetingJoinUrl`, `startTime`/`endTime`,
+  `isCancelled`, `organizerId`. Chat ids use the chat service's conversation-id form, so a
+  chat id feeds `list_messages` unchanged.
+- **Last-message previews are camelCase** (`originalArrivalTime`, `imDisplayName`,
+  `containerId`, `clientMessageId`) — the opposite casing from the chat service's `Message`,
+  hence the separate `teams_protocol::PreviewMessage`.
+- `chatSubType` is an **integer** (0/1 across all 64 chats) despite the name; typed as
+  `Value`.
+- `metadata`: `syncToken` (incremental-update cursor), `forwardSyncToken`, `hasMoreChats`,
+  `isPartialData` (both booleans `false` in the verified response = complete data).
+- `privateFeeds` (notification/draft/mention/call-log streams) and `users` (empty in the
+  verified response) are carried as raw `Value` — no consumer yet.
+- `enableMembershipSummary=true` buys `membershipSummary` (total/user/admin/bot/muted
+  counts) per team; without it the counts are absent.
 
 ## Files (ASM)
 

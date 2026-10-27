@@ -36,6 +36,7 @@ import sys
 # Enum-ish keys whose values carry protocol meaning and no personal data.
 DEFAULT_ALLOW = {
     "@type",
+    "chatType",
     "collapsed",
     "contenttype",
     "favorite",
@@ -45,13 +46,18 @@ DEFAULT_ALLOW = {
     "isCreator",
     "isReader",
     "key",
+    "memberRoleString",
     "mentionType",
     "messagetype",
+    "messageType",
     "ongoingCallChatEnforcement",
     "postType",
     "productThreadType",
     "role",
+    "scenario",
     "spaceType",
+    "streamType",
+    "threadSubType",
     "threadType",
     "type",
 }

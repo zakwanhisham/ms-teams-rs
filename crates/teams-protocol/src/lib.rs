@@ -13,12 +13,17 @@
 
 mod conversations;
 mod messages;
+mod roster;
 
 pub use conversations::{
     Conversation, ConversationList, ConversationProperties, MemberProperties, SyncMetadata,
     ThreadProperties,
 };
 pub use messages::{Emotion, EmotionUser, Mention, Message, MessagePage, MessageProperties};
+pub use roster::{
+    Channel, ChatMember, ChatSummary, MeetingInformation, MembershipSummary, PreviewMessage,
+    RosterMetadata, RosterUpdate, Team,
+};
 
 /// Placeholder so the crate has a symbol to document/test against.
 ///

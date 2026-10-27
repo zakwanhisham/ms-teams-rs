@@ -97,7 +97,8 @@
             suite scope all issue device codes; Graph scopes are rejected
             (`AADSTS70002`). See `docs/auth.md` for the probe table.
       - [~] Redeem FRT per-audience: `https://api.spaces.skype.com` ✅ **live**
-            (FRT → spaces token → authz succeeded), `chatsvcagg.teams.microsoft.com`,
+            (FRT → spaces token → authz succeeded) and `chatsvcagg.teams.microsoft.com` ✅
+            **live** (FRT → `aud=chatsvcagg`, `scp=user_impersonation`, feeds the CSA roster),
             `substrate.office.com`, `graph.microsoft.com` (⚠️ device-code path blocked for
             this client — open question), **`go.trouter.io`** (needed for calls).
       - [~] **authz exchange:** ✅ **live** (`region=apac`, `regionGtms` with 112 services,
@@ -135,13 +136,18 @@
             becomes the primary transport once Phase 5 lands.
       - [ ] Recommendation: **(B) is mandatory for calls**, so implement it first and keep the
             long-poll as a fallback transport behind a trait.
-- [ ] **Team/channel roster**: `GET https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/updates`
-      (audience `chatsvcagg.teams.microsoft.com`) — note `Origin`/`Referer` requirements.
+- [x] **Team/channel roster**: `GET {csa}/api/v1/teams/users/me/updates?isPrefetch=false&enableMembershipSummary=true`,
+      `{csa}` from `regionGtms.chatSvcAggAfd`, bearer `aud=chatsvcagg` minted from the FRT —
+      **verified live** 2026-10-27; typed `RosterUpdate` model + sanitized fixture
+      (`roster.json`) + 10 tests; `teams-cli roster` prints the summary. Teams arrive with
+      **only their General channel**, the rest in the top-level `channels` array; `chats`
+      doubles as the meeting list (join URLs).
 - [ ] **People/search**: `POST https://substrate.office.com/search/api/v1/suggestions`
       (needs `Origin`/`Referer: https://teams.microsoft.com` else 400).
 - [~] Record **fixtures**: sanitized JSON samples for every endpoint into
-      `crates/*/tests/fixtures/` — ✅ `conversations.json` and `messages.json` landed with
-      deserialization tests; every further endpoint needs the same treatment.
+      `crates/*/tests/fixtures/` — ✅ `conversations.json`, `messages.json`, `thread.json`,
+      `message.json`, `roster.json` landed with deserialization tests; every further
+      endpoint needs the same treatment (`tools/sanitize_fixture.py` generates them).
 - [x] **Capture tooling**: `tools/capture/teams_trace.py` (mitmproxy addon with JWT +
       credential redaction) + `tools/capture/README.md` scenario checklist.
 
@@ -206,7 +212,8 @@ work-account login ran through it (2026-10-27).**
 - [~] Auto-refresh: ✅ refresh skew implemented (`is_expired(300)` + expired-token filtering
       on load). **Not yet wired:** on chat 401 → evict session → re-mint → retry once — a 401
       currently surfaces straight to the caller as `ApiError::Status`.
-- [x] `teams-cli auth login | logout | status | whoami | authz` (JWT claims decoded for
+- [x] `teams-cli auth login | logout | status | whoami | authz | mint` (`mint` redeems a
+      cached FRT for another audience and prints its claims — never the token) (JWT claims decoded for
       display only, no signature verification; token values are never printed).
 - [ ] Unit tests with mocked HTTP (`wiremock` / `httpmock`) — no mock-HTTP dependency yet;
       current tests are unit-level over hand-built and live-captured fixtures.
@@ -221,7 +228,9 @@ work-account login ran through it (2026-10-27).**
 - [~] Strongly-typed models: `ConversationList`/`Conversation`/`MessagePage`/`Message`/
       `Mention`/`Emotion`(+`EmotionUser`) ✅ (`teams-protocol/src/{conversations,messages}.rs`)
       — one `Message` type serves both `lastMessage` and the messages page;
-      `Channel`, `User`, `MessageKind` (text/code/image/system), `EventMessage` still open.
+      `RosterUpdate`/`Team`/`Channel`/`ChatSummary`/`MeetingInformation`/`PreviewMessage` ✅
+      (`teams-protocol/src/roster.rs`);
+      `User`, `MessageKind` (text/code/image/system), `EventMessage` still open.
 - [x] Serde deserializers tolerant of unknown fields (`#[serde(default)]`, ignore-unknown) —
       enforced by tests for the conversation **and** message types; keep doing it per type.
 - [ ] `ChatClient` with methods:
@@ -234,7 +243,10 @@ work-account login ran through it (2026-10-27).**
       - [x] `get_message(conv, id)` / `get_thread(conv, root_id)` (via `;messageid=`) —
             **verified live** 2026-10-27. Thread reuses `MessagePage`; a single message is a
             bare `Message` (adds `fromTenantId`). Fixtures: `thread.json`, `message.json`.
-      - [ ] `roster()` (CSA), `search_people(q)` (substrate)
+      - [x] `roster()` (CSA) — typed `RosterUpdate`, **verified live** 2026-10-27;
+            fixture `roster.json`. Bearer minted per audience via
+            `TokenCache::fresh_or_redeem` (`teams-cli auth mint`).
+      - [ ] `search_people(q)` (substrate)
 - [~] Central `ApiClient` handling: base URL from `regionGtms` ✅ (via `AuthzSession::host`),
       correct auth header per service (`Authentication` vs `Authorization`) ✅, `ApiError`
       ✅; MS-CV correlation vectors, retries with jittered exponential backoff and
@@ -246,9 +258,9 @@ work-account login ran through it (2026-10-27).**
 - [ ] Snapshot tests from Phase 2 fixtures.
 
 **Exit criteria:** ✅ met — `teams-cli conversations` and `teams-cli history --conv <id>`
-both print real data (verified live 2026-10-27). Remaining Phase 4 work is beyond the exit
-criteria: `get_message`/`get_thread`, roster/search clients, the `RichText` HTML AST,
-retry/MS-CV handling and snapshot tests.
+both print real data (verified live 2026-10-27). Beyond the exit criteria: `get_message`/
+`get_thread` ✅ and `roster()` ✅ landed (also verified live 2026-10-27); still open are
+`search_people(q)`, the `RichText` HTML AST, retry/MS-CV handling and snapshot tests.
 
 ---
 
