@@ -38,7 +38,11 @@
 - [ ] **WebRTC stack:** `str0m` (pure Rust, no OpenSSL) vs `webrtc-rs` vs FFI to libwebrtc.
       Decide in the Phase 2 spike — this is the single highest-risk dependency choice.
 - [ ] **Async runtime:** `tokio` (non-negotiable given reqwest + long-polling + WebRTC).
-- [ ] **Local storage:** `rusqlite` (bundled SQLite) for message cache + `keyring` crate for tokens.
+- [~] **Local storage:** `rusqlite` (bundled SQLite) for the message cache — still open
+      for Phase 5. Tokens ✅ decided: `CredentialStore` trait with the `0600` file store
+      (default) + the OS keyring via Secret Service (`keyring-core` +
+      `dbus-secret-service-keyring-store`), selected by `TEAMS_RS_CREDENTIAL_STORE`;
+      kernel keyrings rejected on quota (see `docs/auth.md`).
 - [ ] **Minimum supported distros / MSRV** and packaging targets (`.deb`/`.rpm`/Flatpak/AppImage).
 
 ---
@@ -209,11 +213,12 @@ work-account login ran through it (2026-10-27).**
 
 - [x] `DeviceCodeFlow`: prints the code + verification URL, polls with backoff (+5 s on
       `slow_down`, decline/expiry handled) — `device_code.rs`; verified by a live login.
-- [~] `TokenCache`: FRT + per-audience access tokens + derived skype session
-      (`skypetoken`, `region`, `regionGtms`, expiry), stored **`0600`** under
-      `$XDG_STATE_HOME/teams-rs/token-cache.json` ✅ (path in this doc corrected: the code
-      uses `teams-rs`, permissions covered by a test). **OS keyring backend behind a
-      `CredentialStore` trait still open.**
+- [x] `TokenCache`: FRT + per-audience access tokens + derived skype session
+      (`skypetoken`, `region`, `regionGtms`, expiry), stored behind the `CredentialStore`
+      trait: **`0600`** file under `$XDG_STATE_HOME/teams-rs/token-cache.json` by default,
+      OS keyring (Secret Service) under `TEAMS_RS_CREDENTIAL_STORE=keyring` ✅ — keyutils
+      rejected on measurement (20 KB quota vs a 30 KB cache), decision + evidence in
+      `docs/auth.md`.
 - [x] `AuthzClient`: POST authz, parse tokens + region map → `AuthzSession`; `AuthError`
       covers transport / identity / authz / parse failures (concrete variants are `Http`,
       `Identity`, `DeviceCode`, `Authz`, `Parse` rather than the sketch above); both known
@@ -459,7 +464,7 @@ shippable. Build under `crates/teams-call`, UI under `apps/teams-gui`.*
 1. **M0** Skeleton + CI + docs scaffold *(Phase 1)* ✅
 2. **M1a** Chat/auth spike + docs *(Phase 2A)* — ✅ live chat read path proven
 3. **M1b** **Call protocol spike → GO/NO-GO decision** *(Phase 2B)* — ⏳ needs the account owner's captures
-4. **M2** Auth works end-to-end from the CLI *(Phase 3)* ✅ — exit criteria met; 401-retry hook ✅ live-verified, keyring backend open
+4. **M2** Auth works end-to-end from the CLI *(Phase 3)* ✅ — exit criteria met; 401-retry hook ✅ live-verified, keyring backend ✅ (`CredentialStore`)
 5. **M3** Read messages from the terminal *(Phase 4)* ✅ — exit criteria met; roster/search/MS-CV/retries ✅, RichText AST + remaining typed models open
 6. **M4** Realtime + send messages *(Phase 5)*
 7. **M5** GUI chat client usable daily *(Phase 6)*

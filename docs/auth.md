@@ -55,6 +55,7 @@ Conclusions:
 | Device-code request + poll (incl. `slow_down`, decline, expiry) | ✅ | `device_code.rs`; live login succeeded (2026-10-27) |
 | FRT → per-audience refresh | ✅ | `DeviceCodeClient::refresh`; FRT (`foci`) confirmed returned by live login |
 | Token cache, `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` | ✅ | `token_cache.rs`; permissions covered by test |
+| Credential store backends behind `CredentialStore` (file + OS keyring) | ✅ | `store.rs`; selected by `TEAMS_RS_CREDENTIAL_STORE`, default `file` — see below |
 | authz exchange (both enterprise & consumer response shapes) | ✅ | `authz.rs`; live exchange succeeded, `regionGtms` map has 112 services |
 | Claim decoding (unverified, display only) | ✅ | `jwt.rs` |
 | Per-audience mint (`TokenCache::fresh_or_redeem`) | ✅ | picks a cached FRT (audience's own → spaces → any), redeems it, caches under the new label; short-circuits without network while the cached token is fresh — covered by tests |
@@ -89,6 +90,50 @@ Conclusions:
   shape; consumer shape differs — both handled). **Live response still to be captured**:
   run `teams-cli auth login` inside the proxy (`tools/capture/README.md`) and record the
   `regionGtms` key list here.
+
+### Credential store backends (decided 2026-10-28)
+
+The serialized cache (one JSON document) is written through the object-safe
+`CredentialStore` trait (`crates/teams-auth/src/store.rs`): `read`/`write`/`remove`/
+`describe`. Selection is `TEAMS_RS_CREDENTIAL_STORE`:
+
+| Value | Backend | Notes |
+|---|---|---|
+| `file` (default, also unset/empty) | `FileStore` — one `0600` file at `TokenCache::path()` | unchanged behaviour |
+| `keyring` | `KeyringStore` — Secret Service item `service=teams-rs`, `username=token-cache` | Linux only (`org.freedesktop.secrets`: GNOME Keyring, KWallet, `oo7-daemon`) |
+
+Both `teams-cli auth …` and the 401 refreshers (`AuthzRefresher` / `AudienceRefresher`)
+resolve the store through the same `store_for` / `default_store` functions, so a request
+never reads one backend while its recovery writes another. Switching the variable is
+**not a migration** — the other backend stays empty until the next `teams-cli auth login`.
+
+**Why not the kernel keyrings (keyutils)?** Measured and rejected:
+
+- `/proc/sys/kernel/keys/maxbytes` = **20 000** bytes, cumulative per user; the real cache
+  is **30 320 bytes** (3 audiences + authz session) and `add_key` fails with *Disk quota
+  exceeded* (EDQUOT) — even a second 15 KB key overflows the quota.
+- Kernel keyrings are cleared on reboot; the `0600` file already survives it.
+
+So the OS keyring backend is the **Secret Service**: no quota, persists, standard desktop
+keystore. Stack: `keyring-core` + `dbus-secret-service-keyring-store` (`crypto-rust`
+session encryption, `vendored` libdbus → no system build dependencies). KWallet's wrapper
+stores UTF-8 strings only and the payload is JSON, so it round-trips. WSL has no default
+collection → use the file store there.
+
+Tests skip gracefully when no daemon is reachable, except in CI where
+`TEAMS_RS_REQUIRE_KEYRING=1` turns a missing Secret Service into a failure (the test job
+installs `gnome-keyring` and unlocks it with the recipe from keyring-rs's CI).
+
+**Verified live 2026-10-28** against `oo7-daemon` as the local Secret Service: the real
+30 320-byte cache was written into the production keyring entry through the store API,
+`TEAMS_RS_CREDENTIAL_STORE=keyring teams-cli auth status` read the whole document back
+(identity, three audiences, `region=apac` + 112 `regionGtms` services), and
+`auth logout` deleted it (a second attempt reports nothing to remove); the `0600` file
+was untouched and stays the default backend. (Caveat if you script this: `secret-tool`
+caps its stdin at 8 KiB — "password is too long" — so it truncates this cache; the store
+API does not.) The store tests pass against that daemon with
+`TEAMS_RS_REQUIRE_KEYRING=1` (40 KB round-trip + concurrent access) and **fail rather
+than skip** when the variable is set but no Secret Service answers — verified both ways.
 
 ## Checklist
 
@@ -125,6 +170,10 @@ Conclusions:
 
 ### Storage & lifecycle
 - [x] Cache file: `$XDG_STATE_HOME/teams-rs/token-cache.json`, mode `0600` (tested)
+- [x] `CredentialStore` trait with the file backend (default) and an OS keyring backend
+      (`TEAMS_RS_CREDENTIAL_STORE=keyring`, Secret Service) — keyutils rejected on
+      measurement (20 KB quota vs a 30 KB cache), decision recorded under
+      *Credential store backends* above
 - [x] Refresh 300 s before expiry; on 401 → evict → re-mint → retry once — **landed and
       live-verified 2026-10-27**: a poisoned skypetoken recovered via
       `teams_api::AuthzRefresher` (evict spaces → FRT redemption → authz exchange) and a
