@@ -1410,6 +1410,7 @@ dependencies = [
 name = "teams-auth"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "reqwest",
  "serde",
@@ -1438,6 +1439,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "serde_json",
  "teams-api",
  "teams-auth",
  "teams-call",
@@ -1445,6 +1447,7 @@ dependencies = [
  "teams-protocol",
  "teams-realtime",
  "teams-store",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

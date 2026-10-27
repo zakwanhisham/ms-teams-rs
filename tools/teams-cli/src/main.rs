@@ -1,15 +1,18 @@
 //! `teams-cli` — headless Teams client used for protocol exploration (Phase 2),
 //! integration tests, and debugging without the GUI.
 //!
-//! Planned commands (see `TODO.md`):
-//! - `teams-cli auth login | logout | status | whoami`   (Phase 3)
-//! - `teams-cli conversations | history <conv>`          (Phase 4)
-//! - `teams-cli watch | send <conv> <text>`              (Phase 5)
-//! - `teams-cli call <user> | answer | hangup`           (Phase 8)
+//! Current commands:
+//! - `teams-cli auth login|status|authz|whoami|logout` (Phase 2A spike harness)
 //!
-//! The command surface grows phase by phase; right now it only proves the workspace links.
+//! Planned later (see `TODO.md`): `conversations`, `history`, `watch`, `send`, `call`.
 
-use clap::Parser;
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
+
+use teams_auth::{
+    AUDIENCE_SPACES, AuthzClient, AuthzSession, DeviceCodeClient, FOCI_CLIENT_ID, SCOPE_SPACES,
+    TokenCache, decode_claims, identity_from_claims,
+};
 
 /// Unofficial Microsoft Teams client for Linux (headless).
 #[derive(Parser, Debug)]
@@ -18,9 +21,47 @@ struct Cli {
     /// Increase log verbosity (-v = debug, -vv = trace).
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
     verbose: u8,
+
+    #[command(subcommand)]
+    command: Option<Command>,
 }
 
-fn main() {
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Authentication (Phase 2A spike): login, cache and authz exchange
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AuthAction {
+    /// Device-code sign-in: cache the token, then run the authz exchange
+    Login {
+        /// Tenant path segment: `common`, `organizations`, `consumers` or a tenant id
+        #[arg(long, default_value = "common")]
+        tenant: String,
+        /// Scope for the initial token (defaults to the verified spaces.skype scope)
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Show cached identity and token expiry (never prints token values)
+    Status {
+        /// Also list every service name from the authz `regionGtms` map
+        #[arg(short, long)]
+        all_services: bool,
+    },
+    /// (Re)run the authz exchange with the cached spaces token
+    Authz,
+    /// Decode (unverified) claims of the cached spaces token
+    Whoami,
+    /// Delete the local token cache
+    Logout,
+}
+
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     let level = match cli.verbose {
@@ -36,8 +77,183 @@ fn main() {
         .with_target(false)
         .init();
 
-    println!("teams-cli {} (workspace link check OK)", env!("CARGO_PKG_VERSION"));
-    println!("No commands implemented yet — see TODO.md Phase 3+.");
+    if let Err(err) = run(&cli).await {
+        eprintln!("error: {err:#}");
+        std::process::exit(1);
+    }
+}
+
+async fn run(cli: &Cli) -> Result<()> {
+    match &cli.command {
+        None => {
+            println!("teams-cli {}", env!("CARGO_PKG_VERSION"));
+            println!("No command given — try `teams-cli --help`.");
+            Ok(())
+        }
+        Some(Command::Auth { action }) => auth(action, cli.verbose).await,
+    }
+}
+
+async fn auth(action: &AuthAction, verbose: u8) -> Result<()> {
+    match action {
+        AuthAction::Login { tenant, scope } => auth_login(tenant, scope.as_deref()).await,
+        AuthAction::Status { all_services } => auth_status(*all_services || verbose > 0),
+        AuthAction::Authz => auth_authz().await,
+        AuthAction::Whoami => auth_whoami(),
+        AuthAction::Logout => auth_logout(),
+    }
+}
+
+/// `teams-cli auth login` — device-code flow, then the authz exchange (the spike goal).
+async fn auth_login(tenant: &str, scope: Option<&str>) -> Result<()> {
+    let scope = scope.unwrap_or(SCOPE_SPACES);
+    let client = DeviceCodeClient::new(tenant, FOCI_CLIENT_ID);
+
+    let request = client.request_code(scope).await.context("requesting a device code")?;
+    eprintln!("Open: {}", request.login_hint());
+    eprintln!("Code: {} (expires in {}s)", request.user_code, request.expires_in);
+
+    let tokens = client.poll_for_token(&request).await.context("device-code sign-in")?;
+
+    let claims = decode_claims(&tokens.access_token).context("decoding access token claims")?;
+    let identity = identity_from_claims(&claims).context("reading identity from claims")?;
+
+    let mut cache = TokenCache::load()?.unwrap_or_else(TokenCache::new);
+    cache.identity = Some(identity.clone());
+    cache.put_token(AUDIENCE_SPACES, tokens.clone());
+
+    // Authz is the actual Phase 2A goal: skypetoken + region map.
+    match AuthzClient::new().exchange(&tokens.access_token).await {
+        Ok(session) => {
+            print_authz(&session);
+            cache.authz = Some(session);
+        }
+        Err(err) => eprintln!("warning: authz exchange failed (tokens are cached): {err:#}"),
+    }
+    cache.save().context("saving token cache")?;
+
+    println!("signed in{}", identity_suffix(&identity));
+    println!("token cache: {}", TokenCache::path().display());
+    Ok(())
+}
+
+/// `teams-cli auth status` — cache state, expiry times, authz summary.
+fn auth_status(all_services: bool) -> Result<()> {
+    let Some(cache) = TokenCache::load()? else {
+        println!("not signed in (no cache at {})", TokenCache::path().display());
+        return Ok(());
+    };
+
+    match &cache.identity {
+        Some(identity) => println!("signed in{}", identity_suffix(identity)),
+        None => println!("no identity recorded"),
+    }
+    if let Some(updated) = cache.updated_at {
+        println!("cache updated: {}", updated.to_rfc3339());
+    }
+
+    for (audience, token) in &cache.tokens {
+        let refresh =
+            if token.refresh_token.is_some() { "refresh token: yes" } else { "refresh token: NO" };
+        println!("  {audience}: expires {} ({refresh})", token.expires_at().to_rfc3339());
+    }
+
+    match &cache.authz {
+        Some(session) => print_authz_detail(session, all_services),
+        None => println!("no authz session yet — run `teams-cli auth authz`"),
+    }
+    Ok(())
+}
+
+/// `teams-cli auth authz` — refresh if needed, exchange, persist.
+async fn auth_authz() -> Result<()> {
+    let mut cache = TokenCache::load()
+        .context("reading token cache")?
+        .context("not signed in — run `teams-cli auth login` first")?;
+
+    let access = fresh_spaces_token(&mut cache).await?;
+    // Persist a refreshed token even if the exchange below fails.
+    cache.save().context("saving token cache")?;
+
+    let session = AuthzClient::new().exchange(&access).await.context("authz exchange")?;
+    print_authz(&session);
+    cache.authz = Some(session);
+    cache.save().context("saving token cache")?;
+    Ok(())
+}
+
+/// `teams-cli auth whoami` — print (unverified) claims of the cached spaces token.
+fn auth_whoami() -> Result<()> {
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login` first")?;
+    let token = cache.token(AUDIENCE_SPACES)?;
+    let claims = decode_claims(&token.access_token).context("decoding access token claims")?;
+    println!("{}", serde_json::to_string_pretty(&claims)?);
+    Ok(())
+}
+
+/// `teams-cli auth logout` — delete the cache file.
+fn auth_logout() -> Result<()> {
+    if TokenCache::clear()? {
+        println!("token cache removed");
+    } else {
+        println!("no token cache to remove");
+    }
+    Ok(())
+}
+
+/// A non-expired spaces access token, refreshing via the FRT when necessary.
+async fn fresh_spaces_token(cache: &mut TokenCache) -> Result<String> {
+    if let Some(token) = cache.fresh_token(AUDIENCE_SPACES) {
+        return Ok(token.access_token.clone());
+    }
+
+    let refresh = cache
+        .token(AUDIENCE_SPACES)?
+        .refresh_token
+        .clone()
+        .context("token expired and no refresh token — run `teams-cli auth login`")?;
+
+    tracing::info!("spaces token expired; refreshing via FRT");
+    let client = DeviceCodeClient::new("common", FOCI_CLIENT_ID);
+    let token = client.refresh(&refresh, SCOPE_SPACES).await.context("refreshing spaces token")?;
+    let access = token.access_token.clone();
+    cache.put_token(AUDIENCE_SPACES, token);
+    Ok(access)
+}
+
+fn identity_suffix(identity: &teams_auth::CachedIdentity) -> String {
+    match (&identity.name, &identity.upn) {
+        (Some(name), Some(upn)) => format!("as {name} ({upn}), tenant {}", identity.tid),
+        (Some(name), None) => format!("as {name}, tenant {}", identity.tid),
+        (None, Some(upn)) => format!("as {upn}, tenant {}", identity.tid),
+        (None, None) => format!(", tenant {}", identity.tid),
+    }
+}
+
+/// One-line authz summary. Region/hostnames are service metadata, not secrets.
+fn print_authz(session: &AuthzSession) {
+    let region = session.region.as_deref().unwrap_or("<none>");
+    let expires =
+        session.expires_in.map_or_else(|| "unknown lifetime".to_owned(), |s| format!("{s}s"));
+    println!(
+        "authz: region={region}, skype token lifetime {expires}, {} services",
+        session.region_gtms.len()
+    );
+    if let Some(chat) = session.host("chatService") {
+        println!("  chatService = {chat}");
+    }
+}
+
+fn print_authz_detail(session: &AuthzSession, all_services: bool) {
+    print_authz(session);
+    if all_services {
+        for name in session.service_names() {
+            match session.host(name) {
+                Some(host) => println!("  {name} = {host}"),
+                None => println!("  {name} = <non-string entry>"),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -48,5 +264,18 @@ mod tests {
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn identity_suffix_handles_missing_fields() {
+        let identity = teams_auth::CachedIdentity { tid: "tid-1".into(), upn: None, name: None };
+        assert_eq!(identity_suffix(&identity), ", tenant tid-1");
+
+        let identity = teams_auth::CachedIdentity {
+            tid: "tid-1".into(),
+            upn: Some("u@example.com".into()),
+            name: Some("User".into()),
+        };
+        assert_eq!(identity_suffix(&identity), "as User (u@example.com), tenant tid-1");
     }
 }
