@@ -281,16 +281,28 @@ work-account login ran through it (2026-10-27).**
       ±25 % jitter, overridable per client; mocked-HTTP tests in
       `crates/teams-api/tests/retry.rs`). Transport errors are deliberately *not* retried
       so the future write path cannot double-send.
-- [ ] HTML content model: parse Teams wire HTML → internal `RichText` AST (so the GUI can render
-      it natively rather than embedding a webview). Crates: `scraper` or `html5ever` + custom walker.
-      - [ ] mentions, bold/italic/underline/strike, links, code blocks, blockquote, lists,
-            inline images, `@everyone`.
+- [x] HTML content model: parse Teams wire HTML → internal `RichText` AST (so the GUI can
+      render it natively rather than embedding a webview) — `teams-protocol/src/richtext.rs`,
+      html5ever 0.39 (+ `markup5ever_rcdom` 0.39, versions must pair) fragment parser +
+      walker; dialect documented in `docs/endpoints.md` ("RichText wire dialect").
+      **Verified against all 121 RichText/Html messages in the live captures
+      (2026-10-28): 0 parse failures, 0 content-less parses; 28/28 mentions resolved
+      via `properties.mentions`, all 24 emoticon names recovered from the wire.**
+      - [x] mentions (`span`+`itemid` cross-reference), bold (`strong`), links, lists
+            (incl. the misnesting Teams sends), inline images/emoticons, `br`,
+            `margin-left` paragraph runs, tables
+      - [x] italic/underline/strike, inline `code`, `pre` blocks, `blockquote`,
+            headings — implemented for the standard dialect but *not yet seen live*
+            (labelled in code)
+      - [~] `@everyone` — never seen live so far (only `person` mentions); if it appears
+            outside the mention-span dialect it degrade to text like any unmodelled tag
 - [ ] Snapshot tests from Phase 2 fixtures.
 
 **Exit criteria:** ✅ met — `teams-cli conversations` and `teams-cli history --conv <id>`
 both print real data (verified live 2026-10-27). Beyond the exit criteria: `get_message`/
-`get_thread` ✅ and `roster()` ✅ landed (also verified live 2026-10-27); still open are
-`search_people(q)`, the `RichText` HTML AST, retry/MS-CV handling and snapshot tests.
+`get_thread` ✅, `roster()` ✅, `search_people(q)` ✅ and retry/MS-CV ✅ all landed and
+live-verified (2026-10-27); the `RichText` HTML AST ✅ landed and parsed every capture
+(2026-10-28). Still open: snapshot tests (next item below).
 
 ---
 
@@ -469,7 +481,9 @@ shippable. Build under `crates/teams-call`, UI under `apps/teams-gui`.*
 2. **M1a** Chat/auth spike + docs *(Phase 2A)* — ✅ live chat read path proven
 3. **M1b** **Call protocol spike → GO/NO-GO decision** *(Phase 2B)* — ⏳ needs the account owner's captures
 4. **M2** Auth works end-to-end from the CLI *(Phase 3)* ✅ — exit criteria met; 401-retry hook ✅ live-verified, keyring backend ✅ (`CredentialStore`)
-5. **M3** Read messages from the terminal *(Phase 4)* ✅ — exit criteria met; roster/search/MS-CV/retries ✅, RichText AST + remaining typed models open
+5. **M3** Read messages from the terminal *(Phase 4)* ✅ — exit criteria met;
+   roster/search/MS-CV/retries ✅, RichText AST ✅ (all 121 live captures parse);
+   remaining typed models + snapshot tests open
 6. **M4** Realtime + send messages *(Phase 5)*
 7. **M5** GUI chat client usable daily *(Phase 6)*
 8. **M6** Packaged, tray + notifications + incoming-call ringing *(Phase 7)*

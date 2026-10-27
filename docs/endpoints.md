@@ -98,7 +98,9 @@ Notes:
     than failing the page; everything else lands in the property catch-all
     (`deletetime`, `draftId`, `eventReason`, `subject`, …).
   - Mention entry: `{"@type":"http://schema.skype.com/Mention","itemid":N,"mri":…,
-    "mentionType":"person","displayName":…}` — `itemid` is the character offset.
+    "mentionType":"person","displayName":…}` — `itemid` is **not** a character offset but
+    the cross-reference index the RichText span carries (`<span … itemid="N">`); resolve
+    by equality, see the wire dialect note below.
   - Reaction entry: `{"key":"like"|"think"|<emoji-shortcode>,
     "users":[{"mri","time"(<number>),"value"(<string>)}]}`; counts are mirrored in
     `annotationsSummary.emotions` (an object, not stringified).
@@ -107,6 +109,43 @@ Notes:
   - `contenttype` casing is inconsistent (`Text` and `text` both observed).
 - **Read thread — verified live 2026-10-27** (typed as `teams_protocol::MessagePage`,
   fixture `crates/teams-protocol/tests/fixtures/thread.json`).
+
+## RichText wire dialect (observed 2026-10-28)
+
+Bodies with `messagetype = "RichText/Html"` are compact HTML. Captured inventory
+(121 messages across the gitignored `docs/traces/rt-*.json` traces): `p`(260),
+`span`(70), `td`(51), `li`(43), `a`(43), `br`(35), `img`(31), `strong`(28),
+`tr`(17), `ul`(8), `table/tbody`(3), `ol`(2). Parser: `teams-protocol/src/richtext.rs`
+(html5ever 0.39 fragment parse → AST walk); verified to parse all 121 with zero
+failures. Grammar details, all live-observed:
+
+- **Paragraph runs**: top-level `<p>`; `style="margin-left:Npx"` (measured value: `0px`,
+  22×) travels in the AST as `indent_px` — semantics of the npx runs beyond `0` are
+  **unknown, do not invent** (no live message carried `Npx` ≠ `0` yet).
+- **Mentions**: `<span itemscope itemtype="http://schema.skype.com/" itemid="N">`
+  whose *text* is the rendered name; `N` indexes `properties.mentions[N]`
+  (28/28 matched in the captures — `itemid` is a cross-reference, **not a character
+  offset**). Non-numeric `itemid`s on spans are a different construct
+  (`app-preview-card-…` app cards) and must not be treated as mentions.
+- **Emoticons**: `<span class="animated-emoticon-20-…" type="(smile)" itemscope
+  title="…"><img … itemid="smile"></span>` — `type` carries the canonical name in
+  parentheses (inventory seen live: `smile`, `cake`, `cakeslice`, `1f389_partypopper`);
+  the child `img`'s `itemid` and the class tail agree with it.
+- **Links**: `<a href target=_blank rel="noreferrer noopener">`; SharePoint file cards
+  additionally carry `itemid="…guid"`/`itemtype="http://schema.skype.com/…"`.
+- **Lists**: `<ul>"/"<ol><li>` outdoors, *but often misnested* — `p` containing `ul`,
+  `li` directly inside `li`, `li` containing `p` runs. html5ever's tree construction
+  normalizes this (a real parser was required; string handling can't reconstruct it).
+- **Tables**: `table > tbody > tr > td` (no `th` seen live; parser marks `th` as header
+  defensively).
+- `contenttype` says `"Text"` even for HTML bodies in most captures — the
+  discriminator is `messagetype == "RichText/Html"`.
+- **Implemented but never seen live** (standard dialect, labelled in code): `em`/`i`,
+  `u`, `s`/`del`, inline `code`/`pre`/`blockquote`, headings `h1`–`h6`, `hr`,
+  and `@everyone` (only `person` mentions observed, 28×). Anything unmodelled degrades
+  transparently to its text content.
+
+## Services, payloads — alphabetical
 
   ```bash
   cargo run -q -p teams-cli -- history --conv '<id>' --root '<root message id>' --page-size 20
