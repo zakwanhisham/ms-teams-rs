@@ -60,6 +60,7 @@ Conclusions:
 | Claim decoding (unverified, display only) | ✅ | `jwt.rs` |
 | Per-audience mint (`TokenCache::fresh_or_redeem`) | ✅ | picks a cached FRT (audience's own → spaces → any), redeems it, caches under the new label; short-circuits without network while the cached token is fresh — covered by tests |
 | CLI: `teams-cli auth login/status/authz/mint/whoami/logout` | ✅ | never prints token values |
+| Mocked-HTTP tests (`wiremock`) for device-code + authz | ✅ | `tests/device_code_http.rs`, `tests/authz_http.rs`; base URLs injectable (`with_login_base`, `with_endpoint`) |
 
 ### Live findings (login 2026-10-27)
 
@@ -160,8 +161,11 @@ than skip** when the variable is set but no Secret Service answers — verified 
 - [x] Response shape parsed live (`region`, `regionGtms` with 112 services) — **raw body
       still uncaptured**, so the exact `expiresIn` key and full `regionGtms` key list are
       pending a proxied login
-- [ ] Enterprise vs consumer response differences — *enterprise path confirmed live, consumer
-      still only coded*
+- [~] Enterprise vs consumer response differences — *enterprise path confirmed live, consumer
+      still only coded*; both shapes are now covered by mocked-HTTP tests
+      (`crates/teams-auth/tests/authz_http.rs`), which also caught that the consumer
+      `expiresIn` lives **inside** `skypeToken` — the parser now reads it from there
+      (previously such sessions had no known lifetime)
 - [~] Error handling: 401/403 meanings, retry expectations — **401 observed live** on the
       chat service as `{"errorCode":911,"message":"Authentication failed."}` (and plain
       401s from CSA/substrate) and now recovered automatically (evict → re-mint → replay

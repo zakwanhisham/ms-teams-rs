@@ -233,8 +233,12 @@ work-account login ran through it (2026-10-27).**
 - [x] `teams-cli auth login | logout | status | whoami | authz | mint` (`mint` redeems a
       cached FRT for another audience and prints its claims — never the token) (JWT claims decoded for
       display only, no signature verification; token values are never printed).
-- [ ] Unit tests with mocked HTTP (`wiremock` / `httpmock`) — no mock-HTTP dependency yet;
-      current tests are unit-level over hand-built and live-captured fixtures.
+- [x] Unit tests with mocked HTTP (`wiremock`) — `tests/device_code_http.rs` (code issue
+      with form assertions, AADSTS identity errors, `authorization_pending` →
+      `slow_down` → success with the +5 s backoff measured, decline/expiry/deadline
+      endings, refresh grant) and `tests/authz_http.rs` (enterprise + consumer shapes,
+      non-2xx, missing skypetoken); endpoints injectable via `with_login_base` /
+      `with_endpoint`. The poll floor (5 s) makes that suite take ~20 s wall time.
 
 **Exit criteria:** ✅ `teams-cli auth login && teams-cli auth status` works (live,
 2026-10-27); tokens survive a process restart (later CLI runs reload them from the cache).
