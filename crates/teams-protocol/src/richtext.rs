@@ -31,18 +31,19 @@
 use html5ever::tendril::TendrilSink;
 use html5ever::{ParseOpts, QualName, local_name, ns, parse_fragment};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use serde::Serialize;
 
 use crate::Mention;
 
 /// Render-ready representation of one message body.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct RichText {
     /// Top-level flow of the message: paragraphs, lists, tables, quotes, code blocks.
     pub blocks: Vec<Block>,
 }
 
 /// One top-level element of a message body.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum Block {
     /// A `<p>` run; Teams communicates list indentation via `margin-left` on it
     /// (measured live: `margin-left:40px`). `inlines` may be empty for a visual break.
@@ -82,21 +83,21 @@ pub enum Block {
 ///
 /// Plain items become one [`Block::Paragraph`] in `blocks`; block children that stay
 /// inside the item (`li > p`, `li > ul` — both seen live) land here verbatim.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListItem {
     /// The item's block flow.
     pub blocks: Vec<Block>,
 }
 
 /// One `<tr>` of a table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TableRow {
     /// `<th>`/`<td>` cells, in order.
     pub cells: Vec<TableCell>,
 }
 
 /// One table cell.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TableCell {
     /// `true` for `<th>` (not seen live).
     pub header: bool,
@@ -108,7 +109,7 @@ pub struct TableCell {
 ///
 /// Style variants wrap their contents (nesting preserved: `<strong><em>` turns into
 /// `Bold([Italic([Text(…)])])`), so there is no stacked state to reconcile.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum Inline {
     /// Verbatim text (entities already decoded by the parser).
     Text(String),

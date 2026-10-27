@@ -1,0 +1,63 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 61
+expression: model
+---
+{
+  "Groups": [
+    {
+      "Suggestions": [
+        {
+          "Id": "<redacted>",
+          "MRI": "<redacted>",
+          "DisplayName": "<redacted>",
+          "Text": "<redacted>",
+          "QueryText": "<redacted>",
+          "EmailAddresses": [
+            "<redacted>"
+          ],
+          "JobTitle": "<redacted>",
+          "Department": null,
+          "PropertyHits": [
+            "DisplayName"
+          ],
+          "ReferenceId": "<redacted>"
+        },
+        {
+          "Id": "<redacted>",
+          "MRI": "<redacted>",
+          "DisplayName": "<redacted>",
+          "Text": "<redacted>",
+          "QueryText": "<redacted>",
+          "EmailAddresses": [
+            "<redacted>"
+          ],
+          "JobTitle": "<redacted>",
+          "Department": "<redacted>",
+          "PropertyHits": [
+            "proxy_email"
+          ],
+          "ReferenceId": "<redacted>"
+        }
+      ],
+      "Type": "People"
+    }
+  ],
+  "LayoutHints": {
+    "BestMatchSuggestions": [
+      {
+        "ReferenceId": "<redacted>",
+        "group": null,
+        "Group": "<redacted>"
+      },
+      {
+        "ReferenceId": "<redacted>",
+        "group": null,
+        "Group": "<redacted>"
+      }
+    ]
+  },
+  "Instrumentation": {
+    "TraceId": "<redacted>"
+  }
+}

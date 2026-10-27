@@ -1,0 +1,186 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 21
+expression: model
+---
+{
+  "_metadata": {
+    "backwardLink": "<redacted>",
+    "forwardLink": "<redacted>",
+    "syncState": "<redacted>",
+    "totalCount": 5,
+    "lastCompleteSegmentEndTime": null,
+    "lastCompleteSegmentStartTime": null
+  },
+  "conversations": [
+    {
+      "id": "<redacted>",
+      "type": "Conversation",
+      "version": 0,
+      "lastMessage": {
+        "id": "1793085256125",
+        "clientmessageid": "2040975658407849439",
+        "composetime": "<redacted>",
+        "originalarrivaltime": "<redacted>",
+        "version": "1793085256125",
+        "sequenceId": 741,
+        "conversationid": "<redacted>",
+        "conversationLink": "<redacted>",
+        "from": "<redacted>",
+        "imdisplayname": "<redacted>",
+        "fromDisplayNameInToken": "<redacted>",
+        "fromFamilyNameInToken": "<redacted>",
+        "fromGivenNameInToken": "<redacted>",
+        "fromTenantId": null,
+        "content": "<redacted>",
+        "contenttype": null,
+        "messagetype": "RichText/Html",
+        "type": "Message",
+        "rootMessageId": "1793058838818",
+        "postType": null,
+        "prioritizeImDisplayName": null,
+        "amsreferences": null,
+        "annotationsSummary": null,
+        "skypeeditedid": null,
+        "hasAnnotated": null,
+        "properties": {
+          "mentions": null,
+          "cards": null,
+          "files": null,
+          "links": null,
+          "deltaEmotions": null,
+          "emotions": null,
+          "languageStamp": null,
+          "formatVariant": null,
+          "subject": null,
+          "blurHash": null
+        }
+      },
+      "lastRcMetadataVersion": 0,
+      "lastUpdatedMessageId": 0,
+      "lastUpdatedMessageVersion": 0,
+      "memberProperties": {
+        "isReader": false,
+        "memberExpirationTime": 0,
+        "role": "User"
+      },
+      "messages": "<redacted>",
+      "properties": {
+        "addedBy": "<redacted>",
+        "addedByTenantId": "<redacted>",
+        "collapsed": "false",
+        "consumptionhorizon": "<redacted>",
+        "favorite": "true",
+        "isemptyconversation": "False",
+        "lastTimeFavorited": "1790784346318",
+        "lastimreceivedtime": "<redacted>"
+      },
+      "targetLink": "<redacted>",
+      "threadProperties": {
+        "createdat": "<redacted>",
+        "groupId": "<redacted>",
+        "originalThreadId": "<redacted>",
+        "productThreadType": "TeamsTeam",
+        "spaceThreadTopic": "<redacted>",
+        "topic": null,
+        "spaceType": "standard",
+        "threadType": "space",
+        "lastSequenceId": "741",
+        "rosterVersion": 0,
+        "version": "1785721040400",
+        "isCreator": false,
+        "gapDetectionEnabled": "True",
+        "lastjoinat": "1739496317553",
+        "ongoingCallChatEnforcement": "true",
+        "sharepointSiteUrl": "<redacted>"
+      }
+    },
+    {
+      "id": "<redacted>",
+      "type": "Conversation",
+      "version": 0,
+      "lastMessage": {
+        "id": "1793068074661",
+        "clientmessageid": "2180928545427471126",
+        "composetime": "<redacted>",
+        "originalarrivaltime": "<redacted>",
+        "version": "1793068074661",
+        "sequenceId": 115,
+        "conversationid": "<redacted>",
+        "conversationLink": "<redacted>",
+        "from": "<redacted>",
+        "imdisplayname": "<redacted>",
+        "fromDisplayNameInToken": "<redacted>",
+        "fromFamilyNameInToken": "<redacted>",
+        "fromGivenNameInToken": "<redacted>",
+        "fromTenantId": null,
+        "content": "<redacted>",
+        "contenttype": null,
+        "messagetype": "RichText/Html",
+        "type": "Message",
+        "rootMessageId": "1793068074661",
+        "postType": null,
+        "prioritizeImDisplayName": null,
+        "amsreferences": null,
+        "annotationsSummary": null,
+        "skypeeditedid": null,
+        "hasAnnotated": null,
+        "properties": {
+          "mentions": null,
+          "cards": null,
+          "files": null,
+          "links": null,
+          "deltaEmotions": null,
+          "emotions": null,
+          "languageStamp": null,
+          "formatVariant": null,
+          "subject": null,
+          "blurHash": null
+        }
+      },
+      "lastRcMetadataVersion": 0,
+      "lastUpdatedMessageId": 0,
+      "lastUpdatedMessageVersion": 0,
+      "memberProperties": {
+        "isReader": false,
+        "memberExpirationTime": 0,
+        "role": "User",
+        "isFollowing": false
+      },
+      "messages": "<redacted>",
+      "properties": {
+        "addedBy": "<redacted>",
+        "addedByTenantId": "<redacted>",
+        "collapsed": null,
+        "consumptionhorizon": "<redacted>",
+        "favorite": "true",
+        "isemptyconversation": "False",
+        "lastTimeFavorited": "1793091028239",
+        "lastimreceivedtime": "<redacted>",
+        "isfollowed": "<redacted>"
+      },
+      "targetLink": "<redacted>",
+      "threadProperties": {
+        "createdat": "<redacted>",
+        "groupId": "<redacted>",
+        "originalThreadId": "<redacted>",
+        "productThreadType": "TeamsStandardChannel",
+        "spaceThreadTopic": null,
+        "topic": "<redacted>",
+        "spaceType": null,
+        "threadType": "topic",
+        "lastSequenceId": "115",
+        "rosterVersion": 0,
+        "version": "1737195734339",
+        "isCreator": false,
+        "gapDetectionEnabled": "True",
+        "lastjoinat": "1731293560427",
+        "ongoingCallChatEnforcement": null,
+        "sharepointSiteUrl": null,
+        "privacy": "<redacted>",
+        "spaceId": "<redacted>",
+        "topicThreadTopic": "<redacted>"
+      }
+    }
+  ]
+}

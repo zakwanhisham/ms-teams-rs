@@ -1,0 +1,152 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 80
+expression: events
+---
+[
+  {
+    "event_type": "callEnded",
+    "participants": [
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "28:00000000-0000-0000-0000-000000000000",
+        "name": "28:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      },
+      {
+        "identity": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "name": "8:orgid:00000000-0000-0000-0000-000000000000",
+        "display_name": "<redacted>",
+        "duration_secs": 868
+      }
+    ],
+    "organizer_upn": "<redacted>",
+    "occurrence": {
+      "kind": "Occurrence",
+      "subject": "<redacted>",
+      "start_time": "<redacted>",
+      "end_time": "<redacted>",
+      "i_cal_uid": "<redacted>"
+    }
+  },
+  {
+    "event_type": "callStarted",
+    "participants": [],
+    "organizer_upn": "<redacted>",
+    "occurrence": {
+      "kind": "Occurrence",
+      "subject": "<redacted>",
+      "start_time": "<redacted>",
+      "end_time": "<redacted>",
+      "i_cal_uid": "<redacted>"
+    }
+  }
+]

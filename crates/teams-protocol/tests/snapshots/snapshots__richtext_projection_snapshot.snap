@@ -1,0 +1,41 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 100
+expression: model
+---
+{
+  "blocks": [
+    {
+      "Paragraph": {
+        "indent_px": 0,
+        "inlines": [
+          {
+            "Text": "Hello "
+          },
+          {
+            "Bold": [
+              {
+                "Text": "world"
+              }
+            ]
+          },
+          {
+            "Text": " and "
+          },
+          {
+            "Emoticon": {
+              "name": "smile"
+            }
+          },
+          {
+            "Mention": {
+              "item_id": 0,
+              "text": "@Rex",
+              "resolved": "Rex"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

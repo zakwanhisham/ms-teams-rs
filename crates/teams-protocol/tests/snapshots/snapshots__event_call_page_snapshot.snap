@@ -1,0 +1,104 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 69
+expression: model
+---
+{
+  "_metadata": {
+    "backwardLink": null,
+    "forwardLink": null,
+    "syncState": null,
+    "totalCount": null,
+    "lastCompleteSegmentEndTime": null,
+    "lastCompleteSegmentStartTime": null
+  },
+  "messages": [
+    {
+      "id": "1793063244752",
+      "clientmessageid": "1793063244608",
+      "composetime": "<redacted>",
+      "originalarrivaltime": "<redacted>",
+      "version": "1793063244752",
+      "sequenceId": 0,
+      "conversationid": "<redacted>",
+      "conversationLink": "<redacted>",
+      "from": "<redacted>",
+      "imdisplayname": "<redacted>",
+      "fromDisplayNameInToken": null,
+      "fromFamilyNameInToken": null,
+      "fromGivenNameInToken": null,
+      "fromTenantId": null,
+      "content": "<ended/><partlist alt=\"\" count=\"20\"><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"28:00000000-0000-0000-0000-000000000000\"><name>28:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part><part identity=\"8:orgid:00000000-0000-0000-0000-000000000000\"><name>8:orgid:00000000-0000-0000-0000-000000000000</name><displayName><redacted></displayName><duration>868</duration></part></partlist><meetingDetails><meetingDetails><organizerUpn><redacted></organizerUpn><meetingType>Recurring</meetingType><startTime><redacted></startTime><endTime><redacted></endTime><exchangeId><redacted></exchangeId><iCalUid><redacted></iCalUid><hasEphemeralTranscript>false</hasEphemeralTranscript><isRecapEnabled>true</isRecapEnabled><instanceDetails><iCalUid><redacted></iCalUid><startTime><redacted></startTime><endTime><redacted></endTime><subject><redacted></subject><type>Occurrence</type></instanceDetails></meetingDetails></meetingDetails><callEventType>callEnded</callEventType>\n<conversationStartTime><redacted></conversationStartTime>\n<conversationUrl><redacted></conversationUrl>\n<callId>00000000-0000-0000-0000-000000000000</callId>\n<wasGcpBotInvited>False</wasGcpBotInvited>",
+      "contenttype": "application/user+xml",
+      "messagetype": "Event/Call",
+      "type": "Message",
+      "rootMessageId": "1566347771369",
+      "postType": null,
+      "prioritizeImDisplayName": null,
+      "amsreferences": null,
+      "annotationsSummary": null,
+      "skypeeditedid": null,
+      "hasAnnotated": null,
+      "properties": {
+        "mentions": null,
+        "cards": null,
+        "files": null,
+        "links": null,
+        "deltaEmotions": null,
+        "emotions": null,
+        "languageStamp": null,
+        "formatVariant": null,
+        "subject": null,
+        "blurHash": null,
+        "s2spartnername": "<redacted>",
+        "skypeguid": "<redacted>"
+      },
+      "s2spartnername": "<redacted>",
+      "skypeguid": "<redacted>"
+    },
+    {
+      "id": "1793062378192",
+      "clientmessageid": "18250222545740709480",
+      "composetime": "<redacted>",
+      "originalarrivaltime": "<redacted>",
+      "version": "1793062378192",
+      "sequenceId": 0,
+      "conversationid": "<redacted>",
+      "conversationLink": "<redacted>",
+      "from": "<redacted>",
+      "imdisplayname": "<redacted>",
+      "fromDisplayNameInToken": null,
+      "fromFamilyNameInToken": null,
+      "fromGivenNameInToken": null,
+      "fromTenantId": null,
+      "content": "<partlist alt =\"\"></partlist><meetingDetails><meetingDetails><organizerUpn><redacted></organizerUpn><meetingType>Recurring</meetingType><startTime><redacted></startTime><endTime><redacted></endTime><exchangeId><redacted></exchangeId><iCalUid><redacted></iCalUid><hasEphemeralTranscript>false</hasEphemeralTranscript><isRecapEnabled>true</isRecapEnabled><instanceDetails><iCalUid><redacted></iCalUid><startTime><redacted></startTime><endTime><redacted></endTime><subject><redacted></subject><type>Occurrence</type></instanceDetails></meetingDetails></meetingDetails><callEventType>callStarted</callEventType>\n<conversationStartTime><redacted></conversationStartTime>\n<conversationUrl><redacted></conversationUrl>\n<callId>00000000-0000-0000-0000-000000000000</callId>\n",
+      "contenttype": "application/user+xml",
+      "messagetype": "Event/Call",
+      "type": "Message",
+      "rootMessageId": "1566347771369",
+      "postType": null,
+      "prioritizeImDisplayName": null,
+      "amsreferences": null,
+      "annotationsSummary": null,
+      "skypeeditedid": null,
+      "hasAnnotated": null,
+      "properties": {
+        "mentions": null,
+        "cards": null,
+        "files": null,
+        "links": null,
+        "deltaEmotions": null,
+        "emotions": null,
+        "languageStamp": null,
+        "formatVariant": null,
+        "subject": null,
+        "blurHash": null,
+        "s2spartnername": "<redacted>",
+        "skypeguid": "<redacted>"
+      },
+      "s2spartnername": "<redacted>",
+      "skypeguid": "<redacted>"
+    }
+  ],
+  "tenantId": null
+}

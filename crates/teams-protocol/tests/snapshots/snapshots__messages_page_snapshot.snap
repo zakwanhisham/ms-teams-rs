@@ -1,0 +1,182 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 29
+expression: model
+---
+{
+  "_metadata": {
+    "backwardLink": "<redacted>",
+    "forwardLink": null,
+    "syncState": "<redacted>",
+    "totalCount": null,
+    "lastCompleteSegmentEndTime": 0,
+    "lastCompleteSegmentStartTime": 0
+  },
+  "messages": [
+    {
+      "id": "1792373371819",
+      "clientmessageid": "861941555898454098",
+      "composetime": "<redacted>",
+      "originalarrivaltime": "<redacted>",
+      "version": "1792461166302",
+      "sequenceId": 730,
+      "conversationid": "<redacted>",
+      "conversationLink": "<redacted>",
+      "from": "<redacted>",
+      "imdisplayname": "<redacted>",
+      "fromDisplayNameInToken": "<redacted>",
+      "fromFamilyNameInToken": "<redacted>",
+      "fromGivenNameInToken": "<redacted>",
+      "fromTenantId": null,
+      "content": "<redacted>",
+      "contenttype": "Text",
+      "messagetype": "RichText/Html",
+      "type": "Message",
+      "rootMessageId": "1792373371819",
+      "postType": "Standard",
+      "prioritizeImDisplayName": null,
+      "amsreferences": [],
+      "annotationsSummary": {
+        "emotions": {
+          "1f389_partypopper": 6,
+          "follow": 1,
+          "like": 1
+        }
+      },
+      "skypeeditedid": null,
+      "hasAnnotated": null,
+      "properties": {
+        "mentions": "[{\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 0, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}, {\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 1, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}]",
+        "cards": "[]",
+        "files": "[]",
+        "links": "[]",
+        "deltaEmotions": [
+          {
+            "key": "1f389_partypopper",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "1792461166042"
+              }
+            ]
+          }
+        ],
+        "emotions": [
+          {
+            "key": "follow",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "0"
+              }
+            ]
+          },
+          {
+            "key": "1f389_partypopper",
+            "users": [
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "1792373414950"
+              },
+              {
+                "mri": "<redacted>",
+                "time": 0,
+                "value": "1792374025449"
+              }
+            ]
+          }
+        ],
+        "languageStamp": "<redacted>",
+        "formatVariant": "TEAMS",
+        "subject": "<redacted>",
+        "blurHash": null
+      }
+    },
+    {
+      "id": "1792474695557",
+      "clientmessageid": null,
+      "composetime": "<redacted>",
+      "originalarrivaltime": "<redacted>",
+      "version": "1792474695557",
+      "sequenceId": 731,
+      "conversationid": "<redacted>",
+      "conversationLink": "<redacted>",
+      "from": "<redacted>",
+      "imdisplayname": null,
+      "fromDisplayNameInToken": null,
+      "fromFamilyNameInToken": null,
+      "fromGivenNameInToken": null,
+      "fromTenantId": null,
+      "content": "<addmember><target>8:orgid:00000000-0000-0000-0000-000000000000</target><eventtime>0</eventtime><rosterVersion>0</rosterVersion><lastRosterVersion>0</lastRosterVersion><initiator>8:orgid:00000000-0000-0000-0000-000000000000</initiator></addmember>",
+      "contenttype": null,
+      "messagetype": "ThreadActivity/AddMember",
+      "type": "Message",
+      "rootMessageId": "1792474695557",
+      "postType": null,
+      "prioritizeImDisplayName": null,
+      "amsreferences": null,
+      "annotationsSummary": null,
+      "skypeeditedid": null,
+      "hasAnnotated": null,
+      "properties": {
+        "mentions": null,
+        "cards": null,
+        "files": null,
+        "links": null,
+        "deltaEmotions": null,
+        "emotions": null,
+        "languageStamp": null,
+        "formatVariant": null,
+        "subject": null,
+        "blurHash": null
+      }
+    },
+    {
+      "id": "1776215499330",
+      "clientmessageid": "2328258017212205390",
+      "composetime": "<redacted>",
+      "originalarrivaltime": "<redacted>",
+      "version": "1778043007867",
+      "sequenceId": 100,
+      "conversationid": "<redacted>",
+      "conversationLink": "<redacted>",
+      "from": "<redacted>",
+      "imdisplayname": "<redacted>",
+      "fromDisplayNameInToken": "<redacted>",
+      "fromFamilyNameInToken": "<redacted>",
+      "fromGivenNameInToken": "<redacted>",
+      "fromTenantId": null,
+      "content": "<redacted>",
+      "contenttype": "Text",
+      "messagetype": "RichText/Html",
+      "type": "Message",
+      "rootMessageId": "1776215499330",
+      "postType": "Standard",
+      "prioritizeImDisplayName": null,
+      "amsreferences": null,
+      "annotationsSummary": null,
+      "skypeeditedid": "2328258017212205390",
+      "hasAnnotated": null,
+      "properties": {
+        "mentions": null,
+        "cards": null,
+        "files": null,
+        "links": null,
+        "deltaEmotions": null,
+        "emotions": null,
+        "languageStamp": null,
+        "formatVariant": null,
+        "subject": null,
+        "blurHash": null,
+        "adminDelete": true,
+        "deletetime": 0,
+        "hardDeleteReason": "<redacted>",
+        "hardDeleteTime": 0
+      }
+    }
+  ],
+  "tenantId": "<redacted>"
+}

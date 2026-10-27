@@ -1,0 +1,60 @@
+---
+source: crates/teams-protocol/tests/snapshots.rs
+assertion_line: 45
+expression: model
+---
+{
+  "id": "1793058838818",
+  "clientmessageid": "1793058837542",
+  "composetime": "<redacted>",
+  "originalarrivaltime": "<redacted>",
+  "version": "1793063271842",
+  "sequenceId": 733,
+  "conversationid": "<redacted>",
+  "conversationLink": "<redacted>",
+  "from": "<redacted>",
+  "imdisplayname": "<redacted>",
+  "fromDisplayNameInToken": "<redacted>",
+  "fromFamilyNameInToken": "<redacted>",
+  "fromGivenNameInToken": "<redacted>",
+  "fromTenantId": "<redacted>",
+  "content": "<redacted>",
+  "contenttype": "Text",
+  "messagetype": "RichText/Html",
+  "type": "Message",
+  "rootMessageId": null,
+  "postType": null,
+  "prioritizeImDisplayName": null,
+  "amsreferences": null,
+  "annotationsSummary": {
+    "emotions": {
+      "follow": 1
+    }
+  },
+  "skypeeditedid": null,
+  "hasAnnotated": null,
+  "properties": {
+    "mentions": "[{\"@type\": \"http://schema.skype.com/Mention\", \"itemid\": 0, \"mri\": \"<redacted>\", \"mentionType\": \"person\", \"displayName\": \"<redacted>\"}]",
+    "cards": null,
+    "files": null,
+    "links": null,
+    "deltaEmotions": null,
+    "emotions": [
+      {
+        "key": "follow",
+        "users": [
+          {
+            "mri": "<redacted>",
+            "time": 0,
+            "value": "0"
+          }
+        ]
+      }
+    ],
+    "languageStamp": "<redacted>",
+    "formatVariant": null,
+    "subject": "<redacted>",
+    "blurHash": null,
+    "skipfanouttobots": false
+  }
+}
