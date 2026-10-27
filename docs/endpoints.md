@@ -107,6 +107,27 @@ Notes:
   - Edit marker is `skypeeditedid` (equals `clientmessageid` of the edit); delete
     bookkeeping lives in `properties.adminDelete`/`deletetime`/`hardDelete*`.
   - `contenttype` casing is inconsistent (`Text` and `text` both observed).
+  - **Image posts (seen live 2026-10-28, 7 messages)**: `RichText/Html` bodies carrying
+    `amsreferences` (one AMS object id, `0-jhb-…`) and a `properties.blurHash`
+    placeholder; the body embeds `<img src="https://as-api.asm.skype.com/v1/objects/…">`.
+    There is no separate image `messagetype` — distinguish via `Message::has_inline_media`.
+  - **Call-log events (seen live 2026-10-28, 37 messages)**: `messagetype: Event/Call`,
+    `contenttype: application/user+xml`, `properties.skypeguid` (call session UUID) and
+    `s2spartnername: concore_gvc`. Body XML dialect (documented verbatim; sanitized
+    fixture `event-call.json`):
+    - an optional leading state element — `<ended/>` on ended calls, *absent* on
+      call-started bodies (18/37 had none — `started` bodies carry no marker);
+    - `<partlist alt… count=N>` with one `<part identity="8:orgid:…">` per attendee,
+      each holding `<name>` (MRI), `<displayName>`, `<duration>` (seconds); started
+      calls carry an empty partlist;
+    - a **doubly-nested** `<meetingDetails><meetingDetails>…` block: `<organizerUpn>`,
+      `<meetingType>`, `<startTime>`/`<endTime>` (human-formatted), `<exchangeId>`,
+      `<iCalUid>`, `<hasEphemeralTranscript>`, `<isRecapEnabled>`, and an inner
+      `<instanceDetails>` (occurrence `<type>`, `<subject>`, Times, `<iCalUid>`);
+    - outer sibling leaves: `<callEventType>` (`callStarted`/`callEnded`),
+      `<conversationStartTime>`, `<conversationUrl>` (flightproxy URL), `<callId>`,
+      `<wasGcpBotInvited>`.
+    Typed access: `Message::event_message()` (`teams_protocol::EventMessage`).
 - **Read thread — verified live 2026-10-27** (typed as `teams_protocol::MessagePage`,
   fixture `crates/teams-protocol/tests/fixtures/thread.json`).
 

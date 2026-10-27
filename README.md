@@ -29,7 +29,7 @@ Not started: realtime/write path, GUI, desktop integration, Graph extras. **Call
 | 1 | Workspace + CI + docs scaffold | ✅ |
 | 2 | Protocol spike (auth/chat **and** calls → GO/NO-GO) | 🔄 2A live-verified; 2B waits on your captures |
 | 3 | `teams-auth` — device-code login, token cache, authz | ✅ exit criteria met; file + keyring credential stores |
-| 4 | `teams-protocol` + `teams-api` — read path | ✅ exit criteria met; RichText AST ✅ (121 live captures parse), snapshot tests open |
+| 4 | `teams-protocol` + `teams-api` — read path | ✅ exit criteria met; RichText AST ✅ (121 live captures parse) · typed models ✅ · snapshot tests ✅ |
 | 5 | `teams-realtime` + write path | ⬜ |
 | 6 | GUI chat client | ⬜ |
 | 7 | Desktop integration (notifications, tray, packaging) | ⬜ |
