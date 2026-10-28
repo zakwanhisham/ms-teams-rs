@@ -372,8 +372,10 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
       reconnect flush + `sync_cursor` watermark verified live 2026-10-29); the streaming
       channel is Trouter v4 — owner capture pending. Wserv long-poll fallback verified
       **retired** (`410 Gone`).
-- [ ] Integration tests gated behind `TEAMS_TEST_TOKENS` env variable (ignored by default).
-      (`TEAMS_TEST_TOKENS` is owner-visible data; the mocked suites cover the wire shapes.)
+- [x] Integration tests gated behind `TEAMS_TEST_TOKENS` env variable (ignored by default):
+      harness landed (`crates/teams-api/tests/live.rs`, ignored + auto-skip on missing
+      tokens). The gate must point at a gitignored token cache — running it needs the
+      owner's tokens.
 
 **Exit criteria (2026-10-29 honest state):** `teams-cli watch` streams live messages —
 **not fully**: the polling sweep runs (dedup + store cache live-verified); true streaming is
