@@ -336,9 +336,10 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
       (45 s cadence, jitter), subscription manager, resume-from-cursor (persist watermark).
 - [ ] Transport abstraction: `RealtimeTransport` trait; pick Trouter when available, fall back
       to long-poll; connection state surfaced to the UI.
-- [ ] Event decoding → typed `TeamEvent` (`MessageCreated`, `MessageEdited`, `MessageDeleted`,
-      `ReactionChanged`, `ConversationUpdated`, `Typing`, `Presence`, `EndpointExpired`,
-      **`IncomingCall`**).
+- [~] Event decoding → typed `TeamEvent` (`MessageCreated`, `MessageEdited`, `MessageDeleted`,
+      `ReactionChanged`, `ConversationUpdated`, `Typing` decode now — shapes from the
+      committed traces; `Presence`, `EndpointExpired`, **`IncomingCall`** have no observed
+      wire shape yet and stay unlinked until Trouter auth works).
 - [ ] **Write operations:** (live-verified 2026-10-29 + landed in `teams-api::ChatClient`
       — send/edit/delete/react/isread/consumptionhorizon/typing)
       - [x] send text message (capture server id from the `Location` response header, falling
