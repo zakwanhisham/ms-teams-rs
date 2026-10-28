@@ -176,11 +176,14 @@ skypemessage) for each message type.
 
 ## Signalling (Trouter)
 
-- [ ] Websocket endpoint + handshake/auth: `wss://go.trouter.io/v2/a`
-      — 🔶 endpoint confirmed live: unauthenticated websocket upgrade → **HTTP 401**, empty
-      body (2026-10-27). Auth mechanism (bearer? cookie? skypetoken?) TBD from capture.
-- [ ] Registrar: `https://prod.registrar.skype.com/v2/registrations` — endpoint registration
-      with `transport: TROUTER`, `ttl ≥ 300 s`, refresh ≥ 30 s before expiry
+- [ ] Websocket endpoint + handshake/auth: **`POST {trouter}/v4/a` allocate + `wss://{socketio}/v4/c`
+      + `user.authenticate` emit** — allocate/register/connect live-verified 2026-10-29 (see
+      [endpoints.md "Trouter websocket"](endpoints.md#trouter-websocket-call-signalling--phase-2b)
+      for shapes, failure matrix and the open auth question); the old `wss://go.trouter.io/v2/a`
+      probe is superseded. Auth emit: our skypetoken flavor → `badrequest`, AAD bearers →
+      `unauthorized` — needs the Phase 2B owner capture to settle.
+- [ ] Registrar: `POST {alloc.registrarUrl}` → 202 (names above; NOT prod.registrar.skype.com);
+      `clientDescription.templateKey = "MicrosoftTeams"`, `productContext` = JSON string.
 - [ ] Message envelope: framing, correlation ids, MS-CV handling
 - [ ] Lifecycle catalogue:
 

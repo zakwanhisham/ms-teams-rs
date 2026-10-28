@@ -328,9 +328,91 @@ Signalling, meeting join, media/TURN allocation: documented in `calls.md`.
 
 ## Trouter websocket (call signalling — Phase 2B)
 
+Live-verified 2026-10-29 from the official web client bundle
+(`statics.teams.cdn.office.net/teams-modular-packages/hashed-assets/
+cmd-trouter-2873cb3d61573f21.js`, i.e. `@skype/trouter-client` 4.1.36010 + socket.io
+0.9.6 custom build) **and** our own probes with the cached skypetoken. Shared
+infrastructure URLs (same class as go.trouter.io already quoted); no user data.
+
 | Op | Method + path | Status |
 |----|---------------|--------|
-| Websocket endpoint | `wss://go.trouter.io/v2/a` | 🔶 exists: unauthenticated upgrade probe returns **HTTP 401, empty body** (2026-10-27) — auth material TBD from capture |
+| Allocate | `POST https://go.trouter.io/v4/a` (or `https://go.trouter.teams.microsoft.com/v4/a`) | ✅ live 200 — `X-Skypetoken: <skypetoken>` + `X-MS-Migration: True`, `Content-Type: text/plain`, **empty body**; query `cor_id=<uuid>&con_num=<clientID>_<attempt>&tc=<url-enc JSON {"ua","v"}>&timeout=30` |
+| Register | `POST {alloc.registrarUrl}` (live value: `https://edge.skype.com/registrar/prod/V3/registrations`) | ✅ live **202 Accepted, empty body** — `X-Skypetoken` + `X-MS-Migration: True`; auth via **`Authentication` header is wrong (401)** |
+| Connect | `wss://{alloc.socketio host}/v4/c` (NO `/websocket/<sid>` suffix — 404; `wss://go.trouter.io/v4/c` also accepts upgrades) | ✅ upgrade + socket.io `1::` connect frame |
+| Connect auth | emit `user.authenticate` | ❌ not yet accepted live (see below) — official-client frame format reconstructed, server response matrix recorded; the dashboard needs the owner capture |
+
+**Allocation response (shape):**
+`{ccid, id: "<clientID?>_<ccid>", socketio: "https://pub-csm-<region>-<n>-t.trouter.skype.com:443/",
+surl: "https://…-f.trouter.skype.com:3443/v4/f/<session-token>/",
+url: "https://…:8443/v4/f/…/", ttl: "<seconds as string, ~83k>",
+healthUrl, curlb, registrarUrl, connectparams: {sr, issuer(""), sp: "<node>", se, st, scae: "1",
+sig}}` — `scae=1` selects the v4c protocol; `se` is epoch-ms expiry of `sig`.
+
+**Failed shapes (worth remembering):**
+- `POST /v3/a` → 404; `POST /v3/c` → 400; allocating **without `X-Skypetoken` → 401**, and
+  the `Authentication: skypetoken=…` header form → 401 — the bare `X-Skypetoken` header is
+  what the allocator validates.
+- Registration against `prod.registrar.skype.com`/`registrar.skype.com` → 401/404 — the V3
+  registrar URL **from the allocation response** (`edge.skype.com`) is the live one.
+- `clientDescription.templateKey` **required** (error `40041 'client description field
+  "templateKey" is required for set registrations'`); accepted value found by guess:
+  **`"MicrosoftTeams"`** → 202. Other candidates were not exercised against this URL.
+- `clientDescription.productContext` must be a **JSON string** (an object → server error
+  `$.clientDescription.productContext: Unexpected token StartObject`); accepted value:
+  `"{\"appType\": \"Microsoft Teams Web\", \"productNum\": \"13\"}"`.
+- WS endpoint suffix `/v4/c/websocket/<sid>` (socket.io's default transport path) → **404**.
+  `/v4/f/<session-token>` path → **401**, not the connect route.
+- Connect query (from bundle `buildV4cUrlParams` + live tests): `tc=<enc JSON>&timeout=40..70
+  &ccid=<alloc.ccid>&epid=<registrationId>&cor_id=&con_num=` — **no `auth=true`** (dropped it;
+  earlier `401` included it in a wrong-guess probe).
+- `/v4/c` upgrade accepted on all hosts tried (`go.trouter.io`, `go.trouter.teams.microsoft.com`,
+  the `socketio` pub-csm node), and the server drives socket.io 0.9 handshake: `1::` then a
+  ~10 s idle `0:::{"reason":"timeout"}` if nothing is sent.
+
+**v4c authentication (socket.io 0.9 emit, from bundle `sendV4cAuthenticationEvent` + encoder):**
+
+```
+5:::{"name":"user.authenticate","args":[{"headers":{
+      "X-Skypetoken": "<skypetoken>",       // tokenType "skype":
+      "X-MS-Migration": "True" },           //   usingLegacyTokenApi=false → migration header
+    // — or for tokenType "aad"/"cae": {"Authorization": "Bearer <token>"},
+    "connectparams": {…the allocation's connectparams…
+    }  // `sr`,`issuer`,`sp`,`se`,`st`,`scae`,`sig`
+    // official code copies alloc.connectparams, stripping serviceUrl/reconnectUrl (fe()).
+}]}
+```
+
+Socket.io 0.9 wired frame encode: `<type>:<id>(+ack)?:<endpoint(array optional):...`: event
+type `5`, JSON payload = `{"name": eventName, "args": [...]}` (NOT the bare array form;
+bundle `encodePacket`: `case"event": …R=s.stringify({name, args})`). Disconnect frames arrive
+as `0:::{"reason":"…"}`.
+
+**Live server reactions to `user.authenticate` (2026-10-29, all hosts and both header forms):**
+
+| Token form in emit | Server disconnect reason |
+|--------------------|--------------------------|
+| our cached `authz.skype_token` (via X-Skypetoken, ±migration header) | `badrequest` |
+| garbage / AAD JWT / empty string in X-Skypetoken | `unauthorized` |
+| `Bearer <token>` (spaces / chatsvcagg / teams.microsoft.com audiences) | `unauthorized` |
+| no packet sent | `timeout` after ~10 s (so the upgrade path itself is fine) |
+| X-Skypetoken as ws-upgrade headers | ignored (auth must be the emit) |
+
+Wrong-audience AAD bearers are rejected *properly* (`unauthorized` = audience/claim checks
+seen to run), so the emit **format** passes; our **skypetoken flavor** isn't the one the
+official flow presents, and the right AAD audience for trouter hasn't been found — trouter
+shape resources (`*trouter…) return AADSTS500011 (no such resource). What is needed: the
+owner's **Phase 2B stages 1–5 capture** (mitmproxy websocket frames of the real client) to
+settle the exact authenticate argument and token flavor, and follow-ups on the message
+envelope (`trouter.connected` args, `user.activity`, subscription registration semantics +
+`X-Microsoft-Skype-Chain-ID`/correlation-vector handling — all seen in the bundle only).
+
+**Other verified timings (bundle):** ping/pong 40 s + 5 s, request timeout 5 s, backoff cap
+30 s; `con_num=<clientID>_<connectionAttempt>`; reconnect cache `{serviceUrl, reconnectUrl,
+…connectparams}` with `se` epoch-ms expiry dropped 1 h before; `trouter.message_loss` / bad
+`purpose` handled by `Trouter-Responder: "ClientLib"` downstream-reply headers; legacy token
+api = no `X-MS-Migration` header. `/v4/a`↔`/v4/c` rewriting by `scae` (v4c fail → v4a
+websocket fallback, i.e. HTTP long-poll on the same session).
+
 
 ## authz
 
