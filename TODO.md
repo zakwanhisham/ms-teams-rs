@@ -67,9 +67,9 @@
       ```
 - [x] Tooling: `rustfmt` (`rustfmt.toml`) + `clippy -D warnings` with pedantic lints via
       `[workspace.lints]`, `cargo-deny` (`deny.toml`: advisories/licenses/sources/bans),
-      `cargo-nextest` (CI); `cargo-insta` still not installed locally — snapshots are
-   accepted by promoting the `.snap.new` files insta writes on failure (see
-   `tests/snapshots.rs`).
+      `cargo-nextest` (CI, and installed locally 2026-10-28); `cargo-insta` still not
+      installed locally — snapshots are accepted by promoting the `.snap.new` files
+      insta writes on failure (see `tests/snapshots.rs`).
 - [x] CI: GitHub Actions (`.github/workflows/ci.yml`) — fmt, clippy, nextest + doc-tests,
       cargo-deny, rustdoc with `-D warnings`, rust-cache.
 - [x] `README.md` (incl. status table), `LICENSE-MIT` + `LICENSE-APACHE`, `CONTRIBUTING.md`,
@@ -82,7 +82,7 @@
 `cargo fmt --check` / `cargo doc -D warnings` all clean, `teams-cli --help` works.
 
 **Follow-ups carried forward:**
-- [x] Install `cargo-deny` locally — done; `cargo deny check advisories licenses sources bans` passes clean. (`cargo-nextest` still to install locally; CI installs it.)
+- [x] Install `cargo-deny` locally — done; `cargo deny check advisories licenses sources bans` passes clean. (`cargo-nextest` also installed locally 2026-10-28, v0.9.150.)
 - [ ] Push to a git remote to enable the CI workflow.
 - [ ] Decide the §0 GUI toolkit (blocks Phase 6, not Phase 2).
 
