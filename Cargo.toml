@@ -47,6 +47,10 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
+# --- gui (Phase 6, toolkit decision locked 2026-10-29: iced 0.14) ---
+iced = { version = "0.14", features = ["tokio", "image"] }
+iced_futures = "0.14"
+
 # --- cli ---
 clap = { version = "4", features = ["derive", "env"] }
 
