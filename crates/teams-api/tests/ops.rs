@@ -92,6 +92,33 @@ async fn edit_message_puts_content_with_skypeeditedid() {
         .expect("edit ok");
 }
 
+/// Reply: the same POST as send on the `;messageid=` conversation segment.
+#[tokio::test]
+async fn reply_message_posts_to_the_thread_segment() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/users/ME/conversations/48:notes;messageid=1793206366212/messages"))
+        .and(body_json(json!({
+            "clientmessageid": "1793206366999",
+            "content": "<div>reply</div>",
+            "contenttype": "text",
+            "messagetype": "RichText/Html",
+        })))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .insert_header("Location", "https://apac.ng.msg.teams.microsoft.com/v1/users/ME/conversations/48:notes/messages/1793206366999")
+                .set_body_json(json!({ "OriginalArrivalTime": 0 })),
+        )
+        .mount(&server)
+        .await;
+    let chat = client(&server);
+    let sent = chat
+        .reply_message("48:notes", "1793206366212", "<div>reply</div>", 1_793_206_366_999)
+        .await
+        .expect("reply ok");
+    assert_eq!(sent.message_id.as_deref(), Some("1793206366999"));
+}
+
 /// Delete: 200 with a JSON `null` body.
 #[tokio::test]
 async fn delete_message_accepts_null_body() {

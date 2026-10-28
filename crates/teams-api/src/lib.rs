@@ -270,6 +270,41 @@ impl ChatClient {
         Ok(())
     }
 
+    /// Reply to a thread root: the same POST as [`ChatClient::send_message`] with the
+    /// conversation segment suffixed (`{conv};messageid={root}`), matching the read path
+    /// ([`ChatClient::get_thread`]).
+    ///
+    /// **Not yet fully live-verified**: feed thread types (`48:notifications`,
+    /// `48:notes`) reject replies with
+    /// `400 "Reply chains is not allowed in this thread type"` (`StoreInvalidInput`) —
+    /// the URL + body shape reach the store and are recognized as replies, but acceptance
+    /// in ordinary 1:1/group chats still needs a live check with a real conversation
+    /// (owner-visible), hence this stays unverified rather than verified.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] (400 = thread type forbids reply chains), `Json`, `Http`.
+    pub async fn reply_message(
+        &self,
+        conv: &str,
+        root_id: &str,
+        content: &str,
+        clientmessageid: i64,
+    ) -> Result<SentMessage, ApiError> {
+        let body = json!({
+            "clientmessageid": clientmessageid.to_string(),
+            "content": content,
+            "contenttype": "text",
+            "messagetype": "RichText/Html",
+        });
+        let path = format!("{}/messages", thread_root_segment(conv, root_id));
+        let (value, location) =
+            self.service.post_json_with_location(self.base.join(&path)?, &body).await?;
+        let arrival = value.get("OriginalArrivalTime").map(json_scalar_to_string);
+        let message_id = location.as_deref().and_then(message_id_from_location).map(str::to_owned);
+        Ok(SentMessage { message_id, original_arrival_time: arrival })
+    }
+
     /// Delete (soft-delete) one message. Verified live 2026-10-29: `200`, body `null`.
     ///
     /// # Errors
@@ -625,11 +660,7 @@ fn messages_path(conv: &str, page_size: u32) -> String {
 /// Thread path — `;messageid={root}` rides on the **conversation id segment** instead of
 /// being its own path element, matching what the web client sends.
 fn thread_path(conv: &str, root_id: &str, page_size: u32) -> String {
-    format!(
-        "v1/users/ME/conversations/{};messageid={}/messages?pageSize={page_size}&startTime=0",
-        encode_path_segment(conv),
-        encode_path_segment(root_id)
-    )
+    format!("{}/messages?pageSize={page_size}&startTime=0", thread_root_segment(conv, root_id))
 }
 
 /// Single-message path.
@@ -644,6 +675,16 @@ fn message_path(conv: &str, message_id: &str) -> String {
 /// Message POST (send/typing) path.
 fn messages_post_path(conv: &str) -> String {
     format!("v1/users/ME/conversations/{}/messages", encode_path_segment(conv))
+}
+
+/// Conversation-segment prefix of a reply POST: `{conv};messageid={root}` (same segment
+/// form the read-side thread path uses).
+fn thread_root_segment(conv: &str, root_id: &str) -> String {
+    format!(
+        "v1/users/ME/conversations/{};messageid={}",
+        encode_path_segment(conv),
+        encode_path_segment(root_id)
+    )
 }
 
 /// Per-message property path — `properties?name=<name>` under the message.
