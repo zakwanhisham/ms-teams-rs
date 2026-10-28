@@ -1,0 +1,20 @@
+{
+  "ccid": "<redacted>",
+  "id": "<redacted>",
+  "socketio": "<redacted>",
+  "surl": "<redacted>",
+  "url": "<redacted>",
+  "ttl": "79421",
+  "healthUrl": "<redacted>",
+  "curlb": "<redacted>",
+  "registrarUrl": "<redacted>",
+  "connectparams": {
+    "sr": "<redacted>",
+    "issuer": "<redacted>",
+    "sp": "<redacted>",
+    "se": "1793283572782",
+    "st": "1793203851782",
+    "scae": "1",
+    "sig": "<redacted>"
+  }
+}

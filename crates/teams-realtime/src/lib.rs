@@ -1,38 +1,42 @@
 //! Realtime event transport for Teams.
 //!
-//! Two transports behind one `RealtimeTransport` trait (see `TODO.md` Phase 5):
+//! Phase 5 live-verified parts (see `docs/endpoints.md` "Trouter websocket"):
 //!
-//! - **Trouter** (`wss://go.trouter.io/v2/a`) — *primary*: websocket, required for call
-//!   signalling anyway, so it is built first.
-//! - **HTTP long-poll** — *fallback*: endpoint registration
-//!   (`POST /v1/users/ME/endpoints/{id}/active`, ~45 s keepalive) + subscriptions with
-//!   `channelType: httpLongPoll` and `POST …/subscriptions/{n}/poll`.
+//! - **Allocator**: `POST {trouter}/v4/a` with the skypetoken header pair returns the
+//!   connection shape (`Allocation`) including the V3 registrar URL and signed
+//!   `connectparams`.
+//! - **Registrar**: `POST {allocation.registrar_url}` registers this endpoint with the
+//!   allocated `surl` (202 Accepted, empty body). The only template key seen accepted is
+//!   `MicrosoftTeams`, and `product_context` must be serialised as a **JSON string**.
+//! - **Codec**: socket.io 0.9 packet encode/decode as spoken by the official trouter
+//!   client — server connect `1::`, disconnect `0:::{reason}`, event emits
+//!   `5:::{"name":…,"args":[…]}` (object form, not the bare array).
 //!
-//! Responsibilities: connection lifecycle with jittered backoff, resume-from-cursor (a
-//! persisted event watermark), and decoding raw frames into typed `TeamEvent`s —
-//! including `IncomingCall`, which the call stack consumes.
+//! The websocket layer that consumes the codec (auth handshake, ping/pong, reconnect)
+//! lands next; `RealtimeTransport` stays the shared seam between it and the GUI/CLI.
 
 #![forbid(unsafe_code)]
 
-/// Placeholder so the crate has a symbol to document/test against.
-///
-/// Replaced by `RealtimeTransport` / `TeamEvent` in Phase 5.
+pub mod alloc;
+pub mod codec;
+pub mod registrar;
+
+/// Crate identity, used by tests until the transport code replaces it.
 pub const REALTIME_CRATE: &str = "teams-realtime";
 
-/// Trouter websocket endpoint (verify exact URL + subprotocol in the Phase 2B spike).
-pub const TROUTER_URL: &str = "https://go.trouter.io/v2/a";
+/// Product strings sent in the registration (`clientDescription`) — the live-verified
+/// values from the 202 response probe (2026-10-29).
+pub const TEAMS_APP_ID: &str = "Microsoft Teams Web";
+pub const TEAMS_TEMPLATE_KEY: &str = "MicrosoftTeams";
 
 #[cfg(test)]
 mod tests {
-    use super::{REALTIME_CRATE, TROUTER_URL};
+    use super::{REALTIME_CRATE, TEAMS_APP_ID, TEAMS_TEMPLATE_KEY};
 
     #[test]
     fn crate_identity() {
         assert_eq!(REALTIME_CRATE, "teams-realtime");
-    }
-
-    #[test]
-    fn trouter_url_is_https() {
-        assert!(TROUTER_URL.starts_with("https://"));
+        assert_eq!(TEAMS_APP_ID, "Microsoft Teams Web");
+        assert_eq!(TEAMS_TEMPLATE_KEY, "MicrosoftTeams");
     }
 }

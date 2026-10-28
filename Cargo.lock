@@ -2114,11 +2114,16 @@ name = "teams-realtime"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
  "teams-auth",
  "teams-protocol",
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
+ "wiremock",
 ]
 
 [[package]]

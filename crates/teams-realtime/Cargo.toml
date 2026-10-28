@@ -11,10 +11,17 @@ publish.workspace = true
 [dependencies]
 tokio.workspace = true
 futures.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 teams-auth.workspace = true
 teams-protocol.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
 
 [lints]
 workspace = true
