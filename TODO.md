@@ -355,8 +355,9 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
             `consumptionhorizon` conversation cursor)
       - [ ] typing indicator done; presence: credential path verified
             (`presence.teams.microsoft.com` FRT redemption OK, `PresenceRW`), four guessed
-            GET paths all `401/40102` — endpoint lives in an unmined web bundle chunk
-            (`docs/endpoints.md` § Realtime presence probes). Not done.
+            GET paths all `401/40102`, and the defining bundle chunk (324538) 404s on
+            both CDNs (`docs/endpoints.md` § Realtime presence probes). Needs the owner's
+            client capture (same session as the Trouter auth one). Not done.
 - [~] `teams-store`: SQLite schema + migrations (v1 landed: `conversations`, `messages`,
       `users`, `reactions`, `sync_cursor`, `pending_outbox` + message-cache/outbox API).
       `users`/`reactions` writers still to wire (decoder only reads them today).
