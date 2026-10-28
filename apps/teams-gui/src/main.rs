@@ -112,10 +112,21 @@ fn rows_from_page(page: &teams_protocol::MessagePage) -> Vec<MsgRow> {
     rows
 }
 
+/// Human label for a conversation: wire topic → space topic → original thread id →
+/// raw id, in that preference order (matches the CLI's `topic:` printing).
+fn conv_label(c: &teams_protocol::Conversation) -> String {
+    let props = c.thread_properties.as_ref();
+    let label = props
+        .and_then(|p| p.topic.clone())
+        .or_else(|| props.and_then(|p| p.space_thread_topic.clone()))
+        .unwrap_or_default();
+    if label.is_empty() { c.id.clone() } else { label }
+}
+
 fn conv_row(c: &teams_protocol::Conversation) -> ConvRow {
     ConvRow {
         id: c.id.clone(),
-        label: c.id.clone(),
+        label: conv_label(c),
         preview: c.last_message.as_ref().map(body_preview),
     }
 }
