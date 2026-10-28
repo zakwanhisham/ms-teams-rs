@@ -254,17 +254,40 @@ failures. Grammar details, all live-observed:
 
 ## Realtime
 
+The IC3 **Wserv long-poll is retired** on the consumer chat front door: the endpoint
+registration that the fallback transport planned around is answered with **`410 Gone`
+(traceId-style body)** for every tried shape —
+`POST /v1/users/ME/endpoints` with the classic `{endpointId, endpointFeatures:'',
+channelType:'TrouterPush', interestedResources:[…TEMPLATE:"all"…], responseChannel:'Wserv',
+scenarioName:''}` body (live 2026-10-29), then again with non-empty
+`endpointFeatures:"MSNP24|MessagePropertyReceive|MessageUpdates|MessageRetry|MessageReprocess"`
+→ same `410`. `POST /v4/users/ME/endpoints` → `404` (no such resource). Trouter v4
+websocket is therefore the only documented realtime channel for the consumer web client —
+matching `docs/calls.md`'s signalling decision. Long-poll fallback stays deferred; the
+stopgap for `teams-cli watch` is cheap message-feed polling against the read path.
+
 | Op | Method + path | Status |
 |----|---------------|--------|
-| Register endpoint | `POST /v1/users/ME/endpoints` (or `/v4/users/ME/endpoints`, TROUTER transport) | ⬜ |
-| Keepalive | `POST /v1/users/ME/endpoints/{id}/active` `{timeout:12}` ~every 45 s | ⬜ |
-| Subscribe | `POST /v1/users/ME/endpoints/{id}/subscriptions` (`interestedResources`, `channelType: httpLongPoll`) | ⬜ |
-| Poll | `POST /v1/users/ME/endpoints/{id}/subscriptions/{n}/poll` (blocks ~30 s) | ⬜ |
-| Trouter websocket | `wss://go.trouter.io/v2/a` | ⬜ |
-| Registrar | `https://prod.registrar.skype.com/v2/registrations` | ⬜ |
+| Register endpoint (Wserv long-poll) | `POST /v1/users/ME/endpoints` | 🚫 2026-10-29 (410 Gone, tried 2 shapes) |
+| Keepalive | `POST /v1/users/ME/endpoints/{id}/active` | 🚫 (superseded by the 410 above) |
+| Subscribe | `POST /v1/users/ME/endpoints/{id}/subscriptions` | 🚫 (superseded) |
+| Poll | `POST /v1/users/ME/endpoints/{id}/subscriptions/{n}/poll` | 🚫 (superseded) |
+| Trouter websocket (v4) | `wss://…` allocate/register/connect — see the Trouter section above | ✅ flow verified; auth emit acceptance owner-pending |
 
-Subscribed resources (web client): `/v1/threads/ALL`, `/v1/users/ME/contacts/ALL`,
-`/v1/users/ME/conversations/ALL/messages`, `/v1/users/ME/conversations/ALL/properties`.
+Presence (Phase 5 todo) live probes, 2026-10-29:
+- FRT redemption for audience `https://presence.teams.microsoft.com` **succeeds**
+  (`teams-cli auth mint --scope https://presence.teams.microsoft.com/.default`,
+  cached scope shows `PresenceRW`), so the credential path is there.
+- `GET https://presence.teams.microsoft.com/{presence/v2/users/me, v1/users/me/presence,
+  api/v1/teams/me/presence, api/v3/teams/presence}` → `401` with body
+  `{"substatuscode":{"value":40102}}` (bearer with `x-ms-client-consumer-type: teams4life`
+  and again with `x-skypetoken` + that header — same result; no path guessed right).
+- The web client talks presence over a bundle behind `getPresenceService` (GraphQL
+  mutations `setPresence`, `setPresenceAvailability`; coreSetting flags
+  `requireConsumerTypeHeader`/`requireSkypetoken` on the unifiedPresence bind) — the
+  endpoint URL(s) live in a not-yet-downloaded chunk; mining continues before more
+  blind probing. `regionGtms` entries `unifiedPresence` (`presence.teams.microsoft.com`)
+  and `presenceUPS` (`teams.microsoft.com/ups/{region}`) are the two candidate bases.
 
 ## Bearer services
 
