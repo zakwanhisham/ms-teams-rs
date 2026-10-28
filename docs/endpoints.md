@@ -40,7 +40,7 @@
 | Read one message | `GET /v1/users/ME/conversations/{conv}/messages/{id}` | ✅ |
 | Read thread (root + replies) | `GET /v1/users/ME/conversations/{conv};messageid={root}/messages` | ✅ |
 | Post message | `POST /v1/users/ME/conversations/{conv}/messages` | ✅ 2026-10-29 |
-| Reply | `POST /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⬜ |
+| Reply | `POST /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⏳ 2026-10-29 (see below) |
 | Edit | `PUT /v1/users/ME/conversations/{conv}/messages/{id}` (+ `skypeeditedid`) | ✅ 2026-10-29 |
 | Delete | `DELETE /v1/users/ME/conversations/{conv}/messages/{id}` | ✅ 2026-10-29 |
 | React / unreact | `PUT /v1/users/ME/conversations/{conv}/messages/{id}/properties?name=emotions` | ✅ 2026-10-29 |
@@ -242,6 +242,15 @@ failures. Grammar details, all live-observed:
   is not settled; treat the triple as opaque for now except that field 1 is a message
   original-arrival time and the bookmark is a server-issued id (keep whatever the read
   side gave you when advancing the first two fields).
+- **Reply-to-thread**: `POST …/conversations/{conv};messageid={root}/messages` (same
+  `{clientmessageid, content, contenttype, messagetype}` body as Post). Probed live on
+  the two feed thread types (`48:notifications`, `48:notes`): both reject with
+  `400 errorCode:201` wrapping
+  `{"subCode":"StoreInvalidInput","details":"Reply chains is not allowed in this thread
+  type"}` — the request reaches the store and is recognized as a reply (URL + body
+  shape parse), but those feed thread types forbid replies. Acceptance in ordinary
+  1:1/group chats is **not verified yet** (needs a real conversation, owner-visible);
+  the `⏳` row stays open until then.
 
 ## Realtime
 
