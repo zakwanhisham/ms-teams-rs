@@ -363,13 +363,15 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
 - [~] `teams-store`: SQLite schema + migrations (v1 landed: `conversations`, `messages`,
       `users`, `reactions`, `sync_cursor`, `pending_outbox`); message-cache, user and
       reaction writers all landed and exercised through `teams-cli watch` (2026-10-29);
-      the `sync_cursor` resume hook stays unwired until the streaming transport exists.
+      the `sync_cursor` resume hook is wired for the polling watch (watermark on
+      `watch:<conv>`); the streaming-transport resume hook awaits that transport.
 - [x] **Outbox**: queue-before-network + `flush` retry landed in the CLI (dup-safe on the
-      server via the same `clientmessageid`; state transitions tested); the reconnect
-      auto-flush hook is part of the eventual event pump below.
-- [~] **`teams-cli watch`**: works over feed polling (stopgap, dedup + store cache
-      verified live 2026-10-29); the streaming channel is Trouter v4 — owner capture
-      pending. Wserv long-poll fallback verified **retired** (`410 Gone`).
+      server via the same `clientmessageid`; state transitions tested); `watch` auto-flushes
+      the outbox before its first sweep — the reconnect hook lives 2026-10-29.
+- [~] **`teams-cli watch`**: works over feed polling (stopgap, dedup + store cache +
+      reconnect flush + `sync_cursor` watermark verified live 2026-10-29); the streaming
+      channel is Trouter v4 — owner capture pending. Wserv long-poll fallback verified
+      **retired** (`410 Gone`).
 - [ ] Integration tests gated behind `TEAMS_TEST_TOKENS` env variable (ignored by default).
       (`TEAMS_TEST_TOKENS` is owner-visible data; the mocked suites cover the wire shapes.)
 
