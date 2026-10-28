@@ -19,7 +19,10 @@
 
 pub mod alloc;
 pub mod codec;
+pub mod events;
 pub mod registrar;
+
+pub use events::TeamEvent;
 
 /// Crate identity, used by tests until the transport code replaces it.
 pub const REALTIME_CRATE: &str = "teams-realtime";
