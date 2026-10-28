@@ -344,36 +344,42 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
       `ReactionChanged`, `ConversationUpdated`, `Typing` decode now — shapes from the
       committed traces; `Presence`, `EndpointExpired`, **`IncomingCall`** have no observed
       wire shape yet and stay unlinked until Trouter auth works).
-- [ ] **Write operations:** (live-verified 2026-10-29 + landed in `teams-api::ChatClient`
-      — send/edit/delete/react/isread/consumptionhorizon/typing)
+- [x] **Write operations:** (live-verified 2026-10-29 + landed in `teams-api::ChatClient`
+      — send/edit/delete/react/unreact-shape/isread/consumptionhorizon/typing)
       - [x] send text message (capture server id from the `Location` response header, falling
             back to `OriginalArrivalTime`) — never trust the echoed `clientmessageid`
-      - [ ] reply-to-thread (`{conv};messageid={root}`) — path shape implemented for reads
-            (`get_thread`), the write goes through the same POST
+      - [~] reply-to-thread (`{conv};messageid={root}`): the request is recognized
+            (`docs/endpoints.md`), but feed thread types reject with 400/201 "Reply chains
+            is not allowed in this thread type" — acceptance in ordinary chats needs the
+            owner with a real conversation (`⏳`).
       - [x] edit (remember: `properties` is *replaced*, not merged — re-send `mentions` on
             edit), delete, react, mark-as-read (`isread` per message +
             `consumptionhorizon` conversation cursor)
-      - [ ] typing indicator done; presence: credential path verified
+      - [~] typing indicator done; presence: credential path verified
             (`presence.teams.microsoft.com` FRT redemption OK, `PresenceRW`), four guessed
             GET paths all `401/40102`, and the defining bundle chunk (324538) 404s on
             both CDNs (`docs/endpoints.md` § Realtime presence probes). Needs the owner's
             client capture (same session as the Trouter auth one). Not done.
 - [~] `teams-store`: SQLite schema + migrations (v1 landed: `conversations`, `messages`,
-      `users`, `reactions`, `sync_cursor`, `pending_outbox` + message-cache/outbox API).
-      `users`/`reactions` writers still to wire (decoder only reads them today).
-- [ ] **Outbox**: optimistic UI inserts + idempotent retry of unsent messages on reconnect.
-      (Queue-before-network + `flush` retry landed in the CLI; the reconnect hook is the
-      event-pump work below. `state` transitions tested.)
+      `users`, `reactions`, `sync_cursor`, `pending_outbox`); message-cache, user and
+      reaction writers all landed and exercised through `teams-cli watch` (2026-10-29);
+      the `sync_cursor` resume hook stays unwired until the streaming transport exists.
+- [x] **Outbox**: queue-before-network + `flush` retry landed in the CLI (dup-safe on the
+      server via the same `clientmessageid`; state transitions tested); the reconnect
+      auto-flush hook is part of the eventual event pump below.
 - [~] **`teams-cli watch`**: works over feed polling (stopgap, dedup + store cache
       verified live 2026-10-29); the streaming channel is Trouter v4 — owner capture
       pending. Wserv long-poll fallback verified **retired** (`410 Gone`).
 - [ ] Integration tests gated behind `TEAMS_TEST_TOKENS` env variable (ignored by default).
       (`TEAMS_TEST_TOKENS` is owner-visible data; the mocked suites cover the wire shapes.)
 
-**Exit criteria:** `teams-cli watch` streams live messages (polling stopgap running;
-streaming channel = Trouter v4, owner capture pending); `teams-cli send <conv> "hi"` works
-(live-verified 2026-10-29 — send + delete round-trip clean; the *official-client visibility*
-half of the criterion needs the account owner in front of the real client once).
+**Exit criteria (2026-10-29 honest state):** `teams-cli watch` streams live messages —
+**not fully**: the polling sweep runs (dedup + store cache live-verified); true streaming is
+Trouter v4 and waits for the owner capture session. `teams-cli send <conv> "hi"` works
+(live-verified 2026-10-29 — send + delete round-trip clean); the *official-client visibility*
+half needs the account owner in front of the real client once. **One capture session
+(Trouter v4 auth + presence traffic) closes both maybs.** Everything owner-independent in
+this phase is landed and green (27 suites / 204 tests; fmt/clippy/doc/deny clean).
 
 ---
 
