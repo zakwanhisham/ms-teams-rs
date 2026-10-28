@@ -284,10 +284,16 @@ Presence (Phase 5 todo) live probes, 2026-10-29:
   and again with `x-skypetoken` + that header — same result; no path guessed right).
 - The web client talks presence over a bundle behind `getPresenceService` (GraphQL
   mutations `setPresence`, `setPresenceAvailability`; coreSetting flags
-  `requireConsumerTypeHeader`/`requireSkypetoken` on the unifiedPresence bind) — the
-  endpoint URL(s) live in a not-yet-downloaded chunk; mining continues before more
-  blind probing. `regionGtms` entries `unifiedPresence` (`presence.teams.microsoft.com`)
-  and `presenceUPS` (`teams.microsoft.com/ups/{region}`) are the two candidate bases.
+  `requireConsumerTypeHeader`/`requireSkypetoken` on the unifiedPresence bind).
+  Bundle-mining status (2026-10-29): the service factory resolves to chunk **324538**
+  (`hash 330e3de7983c1b8d`) —
+  `https://statics{,int}.teams.cdn.office.net/teams-modular-packages/hashed-assets/324538-330e3de7983c1b8d.js`
+  answers **404 BlobNotFound from all path/name conventions tried**, and the sourcemap CDN
+  (`local.teams.office.com`) resets at TLS handshake from this network — so the shape is
+  bundle-blocked here, not merely ungessed. `regionGtms` entries `unifiedPresence`
+  (`presence.teams.microsoft.com`) and `presenceUPS` (`teams.microsoft.com/ups/{region}`)
+  are the two candidate bases; a single mitmproxy run of the official client settles the
+  path (presence traffic) at the same time as the Trouter auth capture.
 
 ## Bearer services
 
