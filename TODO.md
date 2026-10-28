@@ -30,11 +30,12 @@
 - PSTN dial-out (defer; requires telecom-specific endpoints).
 
 ### Key decisions to lock in early `[!]`
-- [ ] **GUI toolkit:** recommend **`iced` 0.14** (Elm/MVU, wgpu, retained mode — best fit for a
-      long-lived, list-heavy chat UI). Alternatives: `egui` (fast prototype, "debug UI" look),
-      `gtk-rs`/GTK4 (most GNOME-native, but ties you to GTK), `slint` (license caveat).
-      **Call UI adds a hard requirement: GPU video compositing of remote streams.** Verify iced
-      can blit `wgpu` textures into the widget tree cheaply before committing.
+- [x] **GUI toolkit:** ✅ decided 2026-10-29 — **`iced` 0.14**, pinned in
+      `[workspace.dependencies]` (with `tokio`+`image` features). ElM/MVU retained mode
+      fits the long-lived, list-heavy chat UI; the GPU compositing question for remote
+      video stays a Phase 2B spike (iced custom-shader/widgets path exists). Alternatives
+      (`egui`, `gtk-rs`/GTK4, `slint`) rejected: prototype-speed vs product fit, GTK
+      coupling, and license caveats respectively.
 - [ ] **WebRTC stack:** `str0m` (pure Rust, no OpenSSL) vs `webrtc-rs` vs FFI to libwebrtc.
       Decide in the Phase 2 spike — this is the single highest-risk dependency choice.
 - [x] **Async runtime:** `tokio` (non-negotiable given reqwest + long-polling + WebRTC) —
@@ -82,9 +83,9 @@
 `cargo fmt --check` / `cargo doc -D warnings` all clean, `teams-cli --help` works.
 
 **Follow-ups carried forward:**
-- [x] Install `cargo-deny` locally — done; `cargo deny check advisories licenses sources bans` passes clean. (`cargo-nextest` also installed locally 2026-10-28, v0.9.150.)
-- [ ] Push to a git remote to enable the CI workflow.
-- [ ] Decide the §0 GUI toolkit (blocks Phase 6, not Phase 2).
+- [x] Install `cargo-deny` locally — done; `cargo deny check advisories licenses sources bans` passes clean (re-checked for the iced stack 2026-10-29: new permissive licenses allowed, five unmaintained-only transitive advisories noted in `deny.toml`). `cargo-nextest` also installed locally 2026-10-28, v0.9.150.
+- [~] Push to a git remote to enable the CI workflow (owner-owned remote).
+- [x] Decide the §0 GUI toolkit — decided 2026-10-29: iced 0.14 (see §6 kickoff below). Unblocks the rest of Phase 2's video-compositing spike only.
 
 ---
 
@@ -389,7 +390,14 @@ this phase is landed and green (27 suites / 204 tests; fmt/clippy/doc/deny clean
 
 ## Phase 6 — `teams-gui`: chat client
 
-- [ ] App shell: three-pane layout (sidebar of conversations · message list · optional details pane).
+- [~] App shell: three-pane layout (sidebar of conversations · message list · optional
+      details pane). **MVP slice landed 2026-10-29** (`gui:` commit): sidebar buttons from
+      the live-verified `list_conversations`, message list via `list_messages` (plain-text
+      RichText projection, oldest-first reordering), working composer with send +
+      auto-refresh, 5 s poll subscription while a conversation is selected (same stopgap
+      channel as `teams-cli watch`), error status line; client built once from the shared
+      token cache exactly like the CLI. Details pane, virtualization and unread state are
+      the next slices.
 - [ ] Message list: virtualized scrolling, infinite load-older, jump-to-first-unread,
       date separators, "new messages" divider.
 - [ ] Message rendering from the `RichText` AST (no webview): mentions highlighted, code blocks
