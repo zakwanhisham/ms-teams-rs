@@ -27,7 +27,15 @@ pub use refresh::{AudienceRefresher, AuthzRefresher, RefreshFuture, TokenRefresh
 pub use retry::{RetryPolicy, parse_retry_after};
 pub(crate) use service::HttpService;
 
-use serde_json::Value;
+/// Exposed for the integration tests: the `Location`-tail parser of
+/// [`ChatClient::send_message`] verbatim.
+#[doc(hidden)]
+#[must_use]
+pub fn __test_only_message_id_from_location(location: &str) -> Option<&str> {
+    message_id_from_location(location)
+}
+
+use serde_json::{Value, json};
 
 use service::build_http_client;
 
@@ -199,6 +207,175 @@ impl ChatClient {
     /// `GET {base}/{path}` with the skypetoken header, returning parsed JSON.
     async fn get(&self, path: &str) -> Result<Value, ApiError> {
         self.service.get_json(self.base.join(path)?).await
+    }
+
+    /// Send a text message (`RichText/Html` content) and capture the server-assigned id.
+    ///
+    /// `POST /v1/users/ME/conversations/{conv}/messages` (verified live 2026-10-29:
+    /// `201 Created`, the message id **only** in the `Location` header, body
+    /// `{"OriginalArrivalTime":<ms epoch>}`).
+    ///
+    /// The id tail of `Location` is `13` digits for consumer chats. Never trust the
+    /// echoed `clientmessageid` — the server may echo the *arrival* time instead.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`], [`ApiError::Json`], [`ApiError::Http`] — see `service.send`.
+    pub async fn send_message(
+        &self,
+        conv: &str,
+        content: &str,
+        clientmessageid: i64,
+    ) -> Result<SentMessage, ApiError> {
+        let body = json!({
+            // The wire casing is clientmessageid (no `t`), contenttype, messagetype.
+            "clientmessageid": clientmessageid.to_string(),
+            "content": content,
+            "contenttype": "text",
+            "messagetype": "RichText/Html",
+        });
+        let (value, location) = self
+            .service
+            .post_json_with_location(self.base.join(&messages_post_path(conv))?, &body)
+            .await?;
+        // The server echoes {OriginalArrivalTime: <ms>} — an integer (seen live) but taken
+        // leniently as it may arrive as a JSON string or number.
+        let arrival = value.get("OriginalArrivalTime").map(json_scalar_to_string);
+        let message_id = location.as_deref().and_then(message_id_from_location).map(str::to_owned);
+        Ok(SentMessage { message_id, original_arrival_time: arrival })
+    }
+
+    /// Edit one message. `properties` is **replaced, not merged** — an edit rewrite re-sends
+    /// every property (the caller is expected to do that), so the *edit marker*
+    /// `properties.skypeeditedid` — conventionally the clientmessageid of the edit — is
+    /// mandatory to make the edit visible (verified live 2026-10-29: `200`, empty body).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] (404 = unknown message id), or `Json`/`Http`.
+    pub async fn edit_message(
+        &self,
+        conv: &str,
+        message_id: &str,
+        edit_clientmessageid: i64,
+        content: &str,
+    ) -> Result<(), ApiError> {
+        let body = json!({
+            "content": content,
+            "contenttype": "text",
+            "messagetype": "RichText/Html",
+            "properties": { "skypeeditedid": edit_clientmessageid.to_string() },
+        });
+        self.service.put_json(self.base.join(&message_path(conv, message_id))?, &body).await?;
+        Ok(())
+    }
+
+    /// Delete (soft-delete) one message. Verified live 2026-10-29: `200`, body `null`.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on non-2xx, or `Json`/`Http`.
+    pub async fn delete_message(&self, conv: &str, message_id: &str) -> Result<(), ApiError> {
+        self.service.delete(self.base.join(&message_path(conv, message_id))?).await?;
+        Ok(())
+    }
+
+    /// React with `key` (`like`/`heart`/`laugh`/`surprised`/`sad`/`angry`).
+    ///
+    /// `PUT …/messages/{id}/properties?name=emotions` with the body the official web
+    /// client builds (`{key,value}` — **not** a `{<key>: <ts>}` map): shape
+    /// `{"emotions":{"key":"like","value":<ms epoch>}}`. Verified live 2026-10-29: `200`
+    /// and the reaction shows up on a follow-up `GET` as `annotationsSummary.emotions.like: 1`.
+    /// (Earlier shape attempts returned `400 errorCode:201 "Invalid format of emotions
+    /// property"`.)
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`] on a rejected payload/unknown message, or `Json`/`Http`.
+    pub async fn react(
+        &self,
+        conv: &str,
+        message_id: &str,
+        key: &str,
+        at_ms: i64,
+    ) -> Result<(), ApiError> {
+        let body = json!({ "emotions": { "key": key, "value": at_ms } });
+        self.service
+            .put_json(self.base.join(&message_prop_path(conv, message_id, "emotions"))?, &body)
+            .await?;
+        Ok(())
+    }
+
+    /// Remove a reaction. The official client PUTs `{"emotions":{"key":"<key>"}}`
+    /// (bundle helper `deleteMessageProperty` — no `value` field) to the same
+    /// `properties?name=emotions` endpoint.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`], `Json`, `Http`.
+    pub async fn unreact(&self, conv: &str, message_id: &str, key: &str) -> Result<(), ApiError> {
+        let body = json!({ "emotions": { "key": key } });
+        self.service
+            .put_json(self.base.join(&message_prop_path(conv, message_id, "emotions"))?, &body)
+            .await?;
+        Ok(())
+    }
+
+    /// Type-indicator broadcast: `POST {conv}/messages` with `messagetype:
+    /// "Control/Typing"`, empty content (verified live 2026-10-29: `201` like a normal
+    /// send, but nothing is rendered as a message).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`], `Json`, `Http`.
+    pub async fn send_typing(&self, conv: &str) -> Result<(), ApiError> {
+        let body = json!({
+            "content": "",
+            "contenttype": "text",
+            "messagetype": "Control/Typing",
+        });
+        self.service.post_json(self.base.join(&messages_post_path(conv))?, &body).await?;
+        Ok(())
+    }
+
+    /// Per-message read receipt: `{"isread":"<ms epoch as string>"}` on the message
+    /// `properties?name=isread` endpoint (verified live 2026-10-29: `200`).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`], `Json`, `Http`.
+    pub async fn mark_message_read(
+        &self,
+        conv: &str,
+        message_id: &str,
+        at_ms: i64,
+    ) -> Result<(), ApiError> {
+        let body = json!({ "isread": at_ms.to_string() });
+        self.service
+            .put_json(self.base.join(&message_prop_path(conv, message_id, "isread"))?, &body)
+            .await?;
+        Ok(())
+    }
+
+    /// Conversation-level read position (unread cursor). The property name is the
+    /// lowercase `consumptionhorizon`, and the value is the `;`-delimited triple seen
+    /// on read-side responses:
+    /// `<firstUnreadOrigArrival>;\<lastReadOrSelf?>;<syncBookmark>`.
+    ///
+    /// Only a client that has already observed a real value should rewrite the bookmark
+    /// field; callers without one can reuse the format-free variant by forwarding their
+    /// own triple. Verified live 2026-10-29: `200` (camelCase name rejected with
+    /// `400 errorCode:201`).
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Status`], `Json`, `Http`.
+    pub async fn set_consumption_horizon(&self, conv: &str, value: &str) -> Result<(), ApiError> {
+        let body = json!({ "consumptionhorizon": value });
+        self.service
+            .put_json(self.base.join(&conversation_prop_path(conv, "consumptionhorizon"))?, &body)
+            .await?;
+        Ok(())
     }
 
     /// List conversations (both 1:1/group chats and team channels), typed.
@@ -462,6 +639,52 @@ fn message_path(conv: &str, message_id: &str) -> String {
         encode_path_segment(conv),
         encode_path_segment(message_id)
     )
+}
+
+/// Message POST (send/typing) path.
+fn messages_post_path(conv: &str) -> String {
+    format!("v1/users/ME/conversations/{}/messages", encode_path_segment(conv))
+}
+
+/// Per-message property path — `properties?name=<name>` under the message.
+fn message_prop_path(conv: &str, message_id: &str, name: &str) -> String {
+    format!(
+        "v1/users/ME/conversations/{}/messages/{}/properties?name={}",
+        encode_path_segment(conv),
+        encode_path_segment(message_id),
+        name
+    )
+}
+
+/// Conversation property path — `properties?name=<name>` under the conversation.
+fn conversation_prop_path(conv: &str, name: &str) -> String {
+    format!("v1/users/ME/conversations/{}/properties?name={}", encode_path_segment(conv), name)
+}
+
+/// The server-assigned message id: the `Location` header's path tail (verified live:
+/// 13 digits). The header is an absolute URL of this service.
+fn message_id_from_location(location: &str) -> Option<&str> {
+    Some(location.rsplit('/').next()?.trim_start_matches('/').split('?').next()?)
+        .filter(|id| !id.is_empty())
+}
+
+/// A JSON scalar (number or string) as its string form; objects/arrays come back empty.
+fn json_scalar_to_string(value: &serde_json::Value) -> String {
+    match value {
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Result of a successful [`ChatClient::send_message`].
+#[derive(Debug)]
+pub struct SentMessage {
+    /// Server-assigned id (the `Location` tail). `None` if the header was missing or
+    /// empty — a degraded response the caller must handle by reflection on the feed.
+    pub message_id: Option<String>,
+    /// Server echo of `OriginalArrivalTime` (ms epoch as string).
+    pub original_arrival_time: Option<String>,
 }
 
 /// Team/channel roster path under the CSA base (`…/api/csa/{region}/`).

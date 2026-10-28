@@ -22,14 +22,18 @@ use crate::refresh::TokenRefresher;
 use crate::retry::RetryPolicy;
 use crate::{ApiError, CorrelationVector, truncate};
 
-/// Request method of one attempt. Cloned per attempt because a
+/// Request method/body of one attempt. Cloned per attempt because a
 /// [`reqwest::RequestBuilder`] is consumed by `.send()`.
 #[derive(Debug, Clone)]
 enum Body {
-    /// Plain read.
-    None,
-    /// JSON payload (people search) — replayed verbatim on every attempt.
-    Json(Value),
+    /// Plain GET.
+    Get,
+    /// `POST` with a JSON payload, replayed verbatim on every attempt.
+    PostJson(Value),
+    /// `PUT` with a JSON payload (message edit, property writes).
+    PutJson(Value),
+    /// `DELETE`.
+    Delete,
 }
 
 /// Auth header plus static service headers of one client.
@@ -90,7 +94,7 @@ impl HttpService {
     /// retry budget), [`ApiError::Json`] on a malformed body, [`ApiError::Http`] on
     /// transport failure.
     pub(crate) async fn get_json(&self, url: Url) -> Result<Value, ApiError> {
-        self.send(url, Body::None).await
+        Ok(parse_value_or_null(&self.send(url, Body::Get).await?.body))
     }
 
     /// `POST {url}` with a JSON body and parse the JSON response.
@@ -99,12 +103,53 @@ impl HttpService {
     ///
     /// Same as [`HttpService::get_json`].
     pub(crate) async fn post_json(&self, url: Url, body: &Value) -> Result<Value, ApiError> {
-        self.send(url, Body::Json(body.clone())).await
+        let reply = self.send(url, Body::PostJson(body.clone())).await?;
+        Ok(parse_value_or_null(&reply.body))
+    }
+
+    /// `GET {url}` returning the JSON body plus the `Location` response header when the
+    /// service sent one (the chat service puts the created message id in it).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`HttpService::get_json`].
+    #[allow(dead_code)] // used once the chat write path lands (Phase 5)
+    pub(crate) async fn post_json_with_location(
+        &self,
+        url: Url,
+        body: &Value,
+    ) -> Result<(Value, Option<String>), ApiError> {
+        let reply = self.send(url, Body::PostJson(body.clone())).await?;
+        Ok((parse_value_or_null(&reply.body), reply.location))
+    }
+
+    /// `PUT {url}` with a JSON body. Returns the leniently parsed body — property
+    /// writes answer with `200`/`""` bodies that are not JSON.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`HttpService::get_json`].
+    #[allow(dead_code)]
+    pub(crate) async fn put_json(&self, url: Url, body: &Value) -> Result<Value, ApiError> {
+        let reply = self.send(url, Body::PutJson(body.clone())).await?;
+        Ok(parse_value_or_null(&reply.body))
+    }
+
+    /// `DELETE {url}` (message delete: 200 with a `null` JSON body).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`HttpService::get_json`].
+    #[allow(dead_code)]
+    pub(crate) async fn delete(&self, url: Url) -> Result<Value, ApiError> {
+        let reply = self.send(url, Body::Delete).await?;
+        Ok(parse_value_or_null(&reply.body))
     }
 
     /// Send one logical request, retrying retryable statuses within the policy budget
-    /// and re-minting a rejected credential exactly once.
-    async fn send(&self, url: Url, body: Body) -> Result<Value, ApiError> {
+    /// and re-minting a rejected credential exactly once. Returns the raw body text and
+    /// the `Location` response header.
+    async fn send(&self, url: Url, body: Body) -> Result<Reply, ApiError> {
         let mut attempt = 1u32;
         // Set when the 401 recovery ran: at most one re-mint + replay per request.
         let mut refreshed = false;
@@ -113,10 +158,11 @@ impl HttpService {
             let cv = self.cv.next();
             // Snapshot the credential for this attempt (the 401 path compares against it).
             let auth_value = self.current_auth_value();
-            let mut builder = match &body {
-                Body::None => self.http.get(url.clone()),
-                Body::Json(value) => self.http.post(url.clone()).json(value),
-            };
+            let method_body = MethodBody::from(&body);
+            let mut builder = self.http.request(method_body.method, url.clone());
+            if let Some(value) = method_body.json {
+                builder = builder.json(&value);
+            }
             builder = builder
                 .header(self.auth_name, auth_value.as_str())
                 .header(crate::mscv::MS_CV_HEADER, cv.as_str())
@@ -139,6 +185,12 @@ impl HttpService {
                 .get(crate::mscv::MS_CV_HEADER)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned);
+            // The chat service returns created message ids as a `Location` header.
+            let location_header = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
 
             let status = response.status();
             if status.is_success() {
@@ -148,7 +200,7 @@ impl HttpService {
                     response_cv = response_cv.as_deref().unwrap_or("-"),
                     "ok"
                 );
-                return Ok(serde_json::from_str(&text)?);
+                return Ok(Reply { body: text, location: location_header });
             }
 
             let retry_after = retry_after_from(&response);
@@ -220,6 +272,42 @@ impl HttpService {
         }
         Ok(())
     }
+}
+
+/// Body parsed leniently: property writes answer with bare `200` or `""` bodies.
+fn parse_value_or_null(text: &str) -> Value {
+    if text.trim().is_empty() {
+        return Value::Null;
+    }
+    serde_json::from_str(text).unwrap_or(Value::Null)
+}
+
+/// One send attempt materialized: the method plus the JSON body, if any.
+struct MethodBody {
+    method: reqwest::Method,
+    #[allow(dead_code)] // json stays here so the caller never clones twice
+    json: Option<Value>,
+}
+
+impl From<&Body> for MethodBody {
+    fn from(body: &Body) -> Self {
+        match body {
+            Body::Get => Self { method: reqwest::Method::GET, json: None },
+            Body::PostJson(value) => {
+                Self { method: reqwest::Method::POST, json: Some(value.clone()) }
+            }
+            Body::PutJson(value) => {
+                Self { method: reqwest::Method::PUT, json: Some(value.clone()) }
+            }
+            Body::Delete => Self { method: reqwest::Method::DELETE, json: None },
+        }
+    }
+}
+
+/// Successful response of one logical request: raw body plus the `Location` header.
+struct Reply {
+    body: String,
+    location: Option<String>,
 }
 
 /// `Retry-After` of a response, parsed as a duration (delta-seconds or HTTP-date).
