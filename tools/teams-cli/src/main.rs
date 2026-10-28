@@ -355,13 +355,21 @@ async fn flush_outbox() -> Result<()> {
     let client = teams_api::ChatClient::from_session(session)?
         .with_refresher(teams_api::AuthzRefresher::new()?);
     let mut store = teams_store::Store::open(&store_path())?;
+    flush_outbox_into(&client, &mut store).await
+}
 
+/// Drain the outbox of an open store through one client — shared by `flush` and the
+/// `watch` reconnect hook.
+async fn flush_outbox_into(
+    client: &teams_api::ChatClient,
+    store: &mut teams_store::Store,
+) -> Result<()> {
     for entry in store.pending_outbox()? {
         println!(
             "flushing id={} conv={} attempts={}",
             entry.clientmessageid, entry.conv_id, entry.attempts
         );
-        flush_one(&client, &mut store, &entry.conv_id, entry.clientmessageid, &entry.content)
+        flush_one(client, store, &entry.conv_id, entry.clientmessageid, &entry.content)
             .await
             .context("flushing outbox entry")?;
     }
@@ -378,15 +386,26 @@ async fn watch(conv: &str, poll_seconds: u64, once: bool) -> Result<()> {
         .with_refresher(teams_api::AuthzRefresher::new()?);
     let mut store = teams_store::Store::open(&store_path())?;
 
+    // Reconnect hook: any message queued offline is flushed before watching.
+    flush_outbox_into(&client, &mut store).await?;
+
     let mut seen = std::collections::HashSet::<String>::new();
     // Rest before starting: msgs already cached from previous runs count as seen.
     for old in store.messages(conv, 100)? {
         seen.insert(old.id.clone());
     }
+    let cursor_name = format!("watch:{conv}");
+    if let Some(cursor) = store.get_cursor(&cursor_name)? {
+        println!("resume cursor: {cursor}");
+    }
 
+    let mut max_seq: Option<u64> = None;
     loop {
         let page = client.list_messages(conv, 10).await.context("listing messages")?;
         for message in page.messages.iter().rev() {
+            if let Some(seq) = message.sequence_id {
+                max_seq = Some(max_seq.unwrap_or(0).max(seq));
+            }
             if message.id.is_empty() || !seen.insert(message.id.clone()) {
                 continue;
             }
@@ -406,6 +425,12 @@ async fn watch(conv: &str, poll_seconds: u64, once: bool) -> Result<()> {
                 )
                 .discriminant_label(),
             );
+        }
+        if let Some(seq) = max_seq {
+            let watermark = seq.to_string();
+            if store.get_cursor(&cursor_name)?.as_deref() != Some(watermark.as_str()) {
+                store.set_cursor(&cursor_name, &watermark)?;
+            }
         }
         if once {
             println!("once: done");
