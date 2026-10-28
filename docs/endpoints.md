@@ -39,12 +39,14 @@
 | List messages | `GET /v1/users/ME/conversations/{conv}/messages?pageSize=N&startTime=0` | ✅ |
 | Read one message | `GET /v1/users/ME/conversations/{conv}/messages/{id}` | ✅ |
 | Read thread (root + replies) | `GET /v1/users/ME/conversations/{conv};messageid={root}/messages` | ✅ |
-| Post message | `POST /v1/users/ME/conversations/{conv}/messages` | ⬜ |
+| Post message | `POST /v1/users/ME/conversations/{conv}/messages` | ✅ 2026-10-29 |
 | Reply | `POST /v1/users/ME/conversations/{conv};messageid={root}/messages` | ⬜ |
-| Edit | `PUT /v1/users/ME/conversations/{conv}/messages/{id}` (+ `skypeeditedid`) | ⬜ |
-| Delete | `DELETE /v1/users/ME/conversations/{conv}/messages/{id}` | ⬜ |
-| React | `PUT /v1/users/ME/conversations/{conv}/messages/{id}/properties?name=emotions` | ⬜ |
-| Mark read | `PUT /v1/users/ME/conversations/{conv}/properties?name=lastRead` | ⬜ |
+| Edit | `PUT /v1/users/ME/conversations/{conv}/messages/{id}` (+ `skypeeditedid`) | ✅ 2026-10-29 |
+| Delete | `DELETE /v1/users/ME/conversations/{conv}/messages/{id}` | ✅ 2026-10-29 |
+| React / unreact | `PUT /v1/users/ME/conversations/{conv}/messages/{id}/properties?name=emotions` | ✅ 2026-10-29 |
+| Typing | `POST /v1/users/ME/conversations/{conv}/messages` (`Control/Typing`) | ✅ 2026-10-29 |
+| Read receipt (per message) | `PUT /v1/users/ME/conversations/{conv}/messages/{id}/properties?name=isread` | ✅ 2026-10-29 |
+| Mark read (conversation cursor) | `PUT /v1/users/ME/conversations/{conv}/properties?name=consumptionhorizon` | ✅ 2026-10-29 |
 
 Notes:
 - **List conversations — verified live 2026-10-27** (typed model:
@@ -197,6 +199,49 @@ failures. Grammar details, all live-observed:
 - Server message id comes from the `Location` response header on POST (last path segment),
   falling back to `OriginalArrivalTime`. Never use the echoed `clientmessageid`.
 - `properties` is **replaced**, not merged, on edit — re-send `properties.mentions`.
+
+### Write shapes — verified live 2026-10-29 (own `48:notifications` feed; every created
+### message deleted afterwards, delete → `200`/`null` re-verified each round)
+
+- **Post**: `POST …/messages`, body
+  `{clientmessageid:"<ms epoch>", content:"<div>…</div>", contenttype:"text",
+  messagetype:"RichText/Html"}` → `201 Created`, body `{"OriginalArrivalTime":<ms>}`,
+  id **only** in the `Location` header (13-digit tail). Also works without
+  `clientmessageid`. Implementation note: `ChatClient::send_message` never trusts the
+  echoed client id.
+- **Edit**: `PUT …/messages/{id}` `{content, contenttype, messagetype,
+  properties:{skypeeditedid:"<id>"}}` → `200`, **empty** body. Without the
+  `skypeeditedid` property the service rejects the change (the property proves the
+  client has the newest version).
+- **Delete**: `DELETE …/messages/{id}` → `200`, body `null`. Even without
+  `clientmessageid`, a message created then deleted in the same second deletes fine.
+- **React**: `PUT …/messages/{id}/properties?name=emotions`, body
+  `{"emotions":{"key":"like","value":<ms epoch>}}` → `200`; the reaction persists and a
+  follow-up `GET …/messages/{id}` shows `"annotationsSummary":{"emotions":{"like":1}}`.
+  The `{key,value}` object shape was mined from the official web client bundle
+  (`setMessageProperty` helper, `emotions:{key,value}` literal in
+  `statics.teams.cdn.office.net/…/services-chat-…js`). Rejected shapes —
+  `{"emotions":{"like":<ms>}}` (int or string), `{"emotions":{"key":<mri?>}}` without
+  the wrapper: `400 errorCode:201 "Invalid format of emotions property"`.
+  Unreact (bundle-derived, **not yet seen live**): `PUT` the same endpoint with
+  `{"emotions":{"key":"like"}}` (no `value`).
+- **Typing**: `POST …/messages` `{content:"", contenttype:"text",
+  messagetype:"Control/Typing"}` → `201` like a normal send (a `Location`/arrival-time
+  response, nothing rendered as a message).
+- **Read receipt (per message)**: `PUT …/messages/{id}/properties?name=isread`,
+  body `{"isread":"<ms epoch as string>"}` → `200`. Shape mined from the same bundle
+  (`isread:{isread:n.toString()}`), then confirmed live.
+- **Mark read (conversation cursor)**: `PUT …/conversations/{conv}/properties?name=
+  consumptionhorizon`, body `{"consumptionhorizon":"<a>;<b>;<bookmark>"}` — the same
+  `;`-delimited triple the read side (`view=msnp24Equivalent` conversations) returns,
+  e.g. `<firstUnreadOrigArrival>;<newer time>;<large syncBookmark>`. Accepted with a
+  synthetic bookmark (`200`); camelCase `name=consumptionHorizon` is rejected
+  (`400 errorCode:201 "… property is not allowed"`). The `lastRead` name is also
+  rejected with the same error — only lowercase `consumptionhorizon` is allowed on
+  `regionGtms.chatService` IC3 bases. What `a`/`b`/bookmark each mean authoritatively
+  is not settled; treat the triple as opaque for now except that field 1 is a message
+  original-arrival time and the bookmark is a server-issued id (keep whatever the read
+  side gave you when advancing the first two fields).
 
 ## Realtime
 

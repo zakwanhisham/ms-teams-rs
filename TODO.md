@@ -339,12 +339,16 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
 - [ ] Event decoding → typed `TeamEvent` (`MessageCreated`, `MessageEdited`, `MessageDeleted`,
       `ReactionChanged`, `ConversationUpdated`, `Typing`, `Presence`, `EndpointExpired`,
       **`IncomingCall`**).
-- [ ] **Write operations:**
-      - [ ] send text message (capture server id from the `Location` response header, falling
+- [ ] **Write operations:** (live-verified 2026-10-29 + landed in `teams-api::ChatClient`
+      — send/edit/delete/react/isread/consumptionhorizon/typing)
+      - [x] send text message (capture server id from the `Location` response header, falling
             back to `OriginalArrivalTime`) — never trust the echoed `clientmessageid`
-      - [ ] reply-to-thread (`{conv};messageid={root}`), edit (remember: `properties` is
-            *replaced*, not merged — re-send `mentions` on edit), delete, react, mark-as-read
-      - [ ] typing indicator, presence (`presenceDocs/messagingService`)
+      - [ ] reply-to-thread (`{conv};messageid={root}`) — path shape implemented for reads
+            (`get_thread`), the write goes through the same POST
+      - [x] edit (remember: `properties` is *replaced*, not merged — re-send `mentions` on
+            edit), delete, react, mark-as-read (`isread` per message +
+            `consumptionhorizon` conversation cursor)
+      - [ ] typing indicator done; presence (`presenceDocs/messagingService`) still ⬜
 - [ ] `teams-store`: SQLite schema + migrations
       (`conversations`, `messages`, `users`, `reactions`, `sync_cursor`, `pending_outbox`).
 - [ ] **Outbox**: optimistic UI inserts + idempotent retry of unsent messages on reconnect.
