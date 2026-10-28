@@ -330,12 +330,16 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
 
 ## Phase 5 — `teams-realtime` + write path
 
-- [ ] **Trouter transport (primary)**: websocket client, auth handshake, message envelope
-      codec, auto-reconnect with backoff, MS-CV headers. Shared with `teams-call` signalling.
-- [ ] **HTTP long-poll transport (fallback)**: endpoint registration + `/active` keepalive
-      (45 s cadence, jitter), subscription manager, resume-from-cursor (persist watermark).
-- [ ] Transport abstraction: `RealtimeTransport` trait; pick Trouter when available, fall back
-      to long-poll; connection state surfaced to the UI.
+- [~] **Trouter transport (primary)**: primitives landed 2026-10-29 — allocator
+      (`crates/teams-realtime/src/alloc.rs`), registrar (`registrar.rs`), socket.io 0.9
+      codec (`codec.rs`) + fixture; connect/heartbeat/reconnect loop and the auth emit
+      acceptance are owner-capture pending (the emit format is bundle-verified, all
+      mintable token flavors rejected `badrequest`/`unauthorized` live).
+- [🚫] **HTTP long-poll transport (fallback)**: verified retired live 2026-10-29 —
+      `POST /v1/users/ME/endpoints` answers `410 Gone` on the consumer chat front door,
+      `/v4` → `404`. Trouter v4 is the only realtime channel; `watch` polls instead.
+- [~] Transport abstraction: the polling watch stands in; the `RealtimeTransport` trait
+      finalizes when the Trouter auth acceptance is settled.
 - [~] Event decoding → typed `TeamEvent` (`MessageCreated`, `MessageEdited`, `MessageDeleted`,
       `ReactionChanged`, `ConversationUpdated`, `Typing` decode now — shapes from the
       committed traces; `Presence`, `EndpointExpired`, **`IncomingCall`** have no observed
@@ -354,10 +358,18 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
       `users`, `reactions`, `sync_cursor`, `pending_outbox` + message-cache/outbox API).
       `users`/`reactions` writers still to wire (decoder only reads them today).
 - [ ] **Outbox**: optimistic UI inserts + idempotent retry of unsent messages on reconnect.
+      (Queue-before-network + `flush` retry landed in the CLI; the reconnect hook is the
+      event-pump work below. `state` transitions tested.)
+- [~] **`teams-cli watch`**: works over feed polling (stopgap, dedup + store cache
+      verified live 2026-10-29); the streaming channel is Trouter v4 — owner capture
+      pending. Wserv long-poll fallback verified **retired** (`410 Gone`).
 - [ ] Integration tests gated behind `TEAMS_TEST_TOKENS` env variable (ignored by default).
+      (`TEAMS_TEST_TOKENS` is owner-visible data; the mocked suites cover the wire shapes.)
 
-**Exit criteria:** `teams-cli watch` streams live messages; `teams-cli send <conv> "hi"` works
-and the message appears in the official client.
+**Exit criteria:** `teams-cli watch` streams live messages (polling stopgap running;
+streaming channel = Trouter v4, owner capture pending); `teams-cli send <conv> "hi"` works
+(live-verified 2026-10-29 — send + delete round-trip clean; the *official-client visibility*
+half of the criterion needs the account owner in front of the real client once).
 
 ---
 
