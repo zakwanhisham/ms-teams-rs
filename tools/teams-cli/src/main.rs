@@ -3,8 +3,6 @@
 //!
 //! Current commands:
 //! - `teams-cli auth login|status|authz|whoami|logout` (Phase 2A spike harness)
-//!
-//! Planned later (see `TODO.md`): `conversations`, `history`, `watch`, `send`, `call`.
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -62,6 +60,28 @@ enum Command {
         /// under the gitignored docs/traces/, never commit the output)
         #[arg(long)]
         raw_out: Option<std::path::PathBuf>,
+    },
+    /// Send a text message into one conversation (Phase 5 write path). The message id
+    /// printed is a server-side secret-free id — safe to quote; the message content is
+    /// whatever you typed.
+    Send {
+        /// Conversation id, exactly as printed by `teams-cli conversations`
+        #[arg(long)]
+        conv: String,
+        /// Message text (wrapped in a simple `<div>…</div>` RichText/Html body)
+        text: String,
+        /// Delete it right after the send — probe mode for feed experiments
+        #[arg(long)]
+        ephemeral: bool,
+    },
+    /// Delete one message of one conversation (Phase 5 write path)
+    Delete {
+        /// Conversation id, exactly as printed by `teams-cli conversations`
+        #[arg(long)]
+        conv: String,
+        /// Message id, exactly as printed by `teams-cli history --conv …`
+        #[arg(long)]
+        message: String,
     },
     /// Team/channel roster via CSA (Phase 4 read path)
     Roster {
@@ -187,6 +207,8 @@ async fn run(cli: &Cli) -> Result<()> {
         Some(Command::History { conv, page_size, root, message, raw_out }) => {
             history(conv, *page_size, root.as_deref(), message.as_deref(), raw_out.as_deref()).await
         }
+        Some(Command::Send { conv, text, ephemeral }) => send(conv, text, *ephemeral).await,
+        Some(Command::Delete { conv, message }) => delete_message(conv, message).await,
         Some(Command::Roster { raw_out }) => roster(raw_out.as_deref()).await,
         Some(Command::Search { query, limit, raw_out }) => {
             search_people(query, *limit, raw_out.as_deref()).await
@@ -232,6 +254,67 @@ async fn history(
     dump_raw(&serde_json::to_value(&page)?, raw_out)?;
     print_message_summary(&page);
     Ok(())
+}
+
+/// `teams-cli send --conv <id> "<text>"` — Phase 5 write path.
+///
+/// Sends `RichText/Html` and prints the server-assigned id from the `Location`
+/// response header (13-digit tail) plus the arrival time — never the echoed
+/// `clientmessageid` (verified live 2026-10-29, `docs/endpoints.md` § Chat service).
+async fn send(conv: &str, text: &str, ephemeral: bool) -> Result<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
+    let client = teams_api::ChatClient::from_session(session)?
+        .with_refresher(teams_api::AuthzRefresher::new()?);
+
+    let clientmessageid = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_millis()
+        .try_into()
+        .context("millisecond timestamp does not fit the clientmessageid range")?;
+    let content = format!("<div>{}</div>", html_escape_comment(text));
+    let sent = client.send_message(conv, &content, clientmessageid).await?;
+
+    let Some(message_id) = sent.message_id.as_deref() else {
+        anyhow::bail!("service returned no Location header — cannot quote the message id");
+    };
+    println!(
+        "sent id={message_id} arrival={}",
+        sent.original_arrival_time.as_deref().unwrap_or("-")
+    );
+    if ephemeral {
+        client.delete_message(conv, message_id).await.context("ephemeral delete")?;
+        println!("ephemeral: deleted {message_id}");
+    }
+    Ok(())
+}
+
+/// `teams-cli delete --conv <id> --message <id>` — soft-delete a message.
+async fn delete_message(conv: &str, message_id: &str) -> Result<()> {
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
+    let client = teams_api::ChatClient::from_session(session)?
+        .with_refresher(teams_api::AuthzRefresher::new()?);
+    client.delete_message(conv, message_id).await.context("delete")?;
+    println!("deleted {message_id}");
+    Ok(())
+}
+
+/// Escapes the characters a `<div>…</div>` body must not carry raw (`&`, `<`, `>`).
+fn html_escape_comment(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 /// `teams-cli roster` — team/channel list via CSA (Phase 4 read path).
