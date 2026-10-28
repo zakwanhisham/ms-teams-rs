@@ -37,8 +37,12 @@ it does, fall back to browser devtools (Network tab → export HAR) and redact m
 - [ ] chat service calls: conversations list, messages list
 
 ### Phase 2B (calls — the go/no-go gate, see `docs/calls.md`)
-- [ ] Trouter websocket handshake + frames (`go.trouter.io`) — use `mitmdump -w` or the
-      websocket events; note the auth material used
+- [ ] Trouter websocket handshake + frames — recorded automatically by this addon
+      (mitmproxy ≥12): one `kind: websocket` JSONL record per connection with the
+      scrubbed handshake and buffered frames. Text frames keep their content
+      (JWT-scrubbed, truncated), `ping`/`binary` frames record direction and size
+      only. Find them via `grep '"kind": "websocket"' docs/traces/*.jsonl`; note the
+      auth material used. — *recording ready; contents need the account owner's live logins*
 - [ ] registrar registration (`prod.registrar.skype.com`)
 - [ ] 1:1 call: invite → ring → accept → SDP offer/answer → ICE → hangup
 - [ ] incoming call

@@ -128,6 +128,8 @@ class TeamsTrace:
     def __init__(self) -> None:
         self.trace_dir = "docs/traces"
         self.path: str | None = None
+        # in-flight websocket traces, keyed by flow id
+        self._ws_traces: dict[str, dict] = {}
 
     def load(self, loader) -> None:  # noqa: ANN001 - mitmproxy Loader type
         loader.add_option(
@@ -148,6 +150,67 @@ class TeamsTrace:
 
     def _interesting(self, host: str) -> bool:
         return any(marker in host for marker in HOST_MARKERS)
+
+    # --- websocket recording (Phase 2B stage 0) -------------------------------
+
+    def websocket_start(self, flow: http.HTTPFlow) -> None:
+        """Called when a websocket connection commences; record the handshake."""
+
+        if not self._interesting(flow.request.pretty_host) or flow.response is None:
+            return
+        scrubbed = scrub_url(flow.request.pretty_url)
+        if scrubbed.startswith(("http://", "https://")):
+            scrubbed = "ws" + scrubbed[4:]  # ws:// or wss://
+        self._ws_traces[flow.id] = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            # The handshake is an HTTP GET; recorded as ws(s):// for readability.
+            "url": scrubbed,
+            "status": flow.response.status_code,
+            "req_headers": scrub_headers(flow.request.headers),
+            "resp_headers": scrub_headers(flow.response.headers),
+            "ws_key_accept": flow.response.headers.get("sec-websocket-accept", ""),
+            "subprotocol": flow.response.headers.get("sec-websocket-protocol", ""),
+            "frames": [],
+        }
+
+    def websocket_message(self, flow: http.HTTPFlow) -> None:
+        """Buffer one frame; flushed by websocket_end."""
+        trace = self._ws_traces.get(flow.id)
+        if trace is None or flow.websocket is None:
+            return
+        message = flow.websocket.messages[-1]
+        # mitmproxy reassembles fragments; `type` is a wsproto Opcode enum.
+        frame_type = message.type.name.lower()
+        frame: dict[str, object] = {
+            "ts": time.strftime("%H:%M:%SZ", time.gmtime()),
+            "dir": "c→s" if message.from_client else "s→c",
+            "type": frame_type,
+        }
+        if frame_type == "text":
+            text = message.content.decode("utf-8", "replace")
+            frame["text"] = scrub_text(text[:MAX_BODY]) + (
+                f" <truncated, {len(text)} chars>" if len(text) > MAX_BODY else ""
+            )
+        else:
+            # Binary frames are media/SRTP-ish or opaque framing: record size only.
+            frame["bytes"] = len(message.content)
+        trace["frames"].append(frame)
+
+    def websocket_end(self, flow: http.HTTPFlow) -> None:
+        """Flush the connection's handshake + frames as one JSONL record."""
+        trace = self._ws_traces.pop(flow.id, None)
+        if trace is None:
+            return
+        # Summary describes shape: frame counts, not media content.
+        counts: dict[str, int] = {}
+        for frame in trace["frames"]:
+            counts[frame["type"]] = counts.get(frame["type"], 0) + 1  # type: ignore[index]
+        record = {"kind": "websocket", "summary": counts, **trace}
+        try:
+            with open(self.path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as err:  # never break proxying because of tracing
+            print(f"[teams_trace] write failed: {err}")
 
     def response(self, flow: http.HTTPFlow) -> None:
         if not self._interesting(flow.request.pretty_host):

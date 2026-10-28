@@ -171,11 +171,14 @@
 
 - [x] **Capture tooling ready** — `tools/capture/` (mitmproxy addon with redaction +
       scenario checklist). The scenarios below still need the account owner to perform them.
-- [ ] **Execute the close-out plan** — staged sequence, ownership, and explicit GO /
-      NO-GO criteria in [`docs/calls.md`](docs/calls.md) § "Plan to close this spike"
-      (stage 0 pipeline readiness + live probes → stage 1 owner capture session →
-      stages 2–5 analysis, integration, verdict). Stage 0's websocket-recording gap in
-      `tools/capture/teams_trace.py` must be fixed **before** any capture session.
+- [x] **Execute the close-out plan — stage 0 ✅** — pipeline readiness reached: the addon
+      records websocket connections (`websocket_start`/`websocket_message`/`websocket_end`,
+      mitmproxy ≥12 event names, verified live end-to-end on mitmproxy 12.3.1): one
+      `kind: websocket` JSONL record per connection with the scrubbed handshake,
+      protocol/key, and buffered frames — text frames keep content (JWT-scrubbed,
+      truncated to 64 KiB), `ping`/`binary` frames record direction and size only.
+      Remaining stages' live probes (unauthenticated Trouter 401, registrar reachability)
+      and the owner capture session (stages 1–5) still need the account owner.
 
 **Goal: within ~2 weeks, join one real 1:1 Teams call and one scheduled meeting from a
 headless Rust binary, with audio flowing both ways.** If this fails, the plan reverts to
