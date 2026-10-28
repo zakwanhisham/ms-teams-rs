@@ -78,8 +78,9 @@ fn build_client() -> Result<Arc<ChatClient>, String> {
     let session =
         cache.and_then(|c| c.authz).ok_or("not signed in — run `teams-cli auth login`")?;
     let _ = state_dir();
-    let client = ChatClient::from_session(&session).map_err(|e| e.to_string())?;
-    let _ = PathBuf::new(); // keep PathBuf in scope for the doc-path mention
+    let client = ChatClient::from_session(&session)
+        .map_err(|e| e.to_string())?
+        .with_refresher(teams_api::AuthzRefresher::new().map_err(|e| e.to_string())?);
     Ok(Arc::new(client))
 }
 
