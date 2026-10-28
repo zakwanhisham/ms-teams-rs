@@ -134,6 +134,24 @@ impl TeamEvent {
         }
     }
 
+    /// Stable classifier label for logs (rustc types stay internal).
+    #[must_use]
+    pub fn discriminant_label(&self) -> &'static str {
+        match self {
+            Self::MessageCreated { .. } => "MessageCreated",
+            Self::MessageEdited { .. } => "MessageEdited",
+            Self::MessageDeleted { .. } => "MessageDeleted",
+            Self::ReactionChanged { .. } => "ReactionChanged",
+            Self::Typing { .. } => "Typing",
+            Self::CallActivity { .. } => "CallActivity",
+            Self::ConversationUpdated { .. } => "ConversationUpdated",
+            Self::Presence => "Presence",
+            Self::EndpointExpired => "EndpointExpired",
+            Self::IncomingCall => "IncomingCall",
+            Self::Other(_) => "Other",
+        }
+    }
+
     /// Conversation id of any event carrying a message; `None` otherwise.
     #[must_use]
     pub fn conversation_id(&self) -> Option<&str> {

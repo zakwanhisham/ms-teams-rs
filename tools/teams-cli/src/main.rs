@@ -74,6 +74,22 @@ enum Command {
         #[arg(long)]
         ephemeral: bool,
     },
+    /// Retry everything still pending in the outbox (idempotent on reconnect)
+    Flush,
+    /// Stream a conversation cheaply by polling the messages feed (stopgap until the
+    /// Trouter transport can authenticate — `docs/endpoints.md` § Realtime). Prints
+    /// each new message id + type; content is your own feed data.
+    Watch {
+        /// Conversation id, exactly as printed by `teams-cli conversations`
+        #[arg(long)]
+        conv: String,
+        /// Poll cadence in seconds
+        #[arg(long, default_value_t = 5)]
+        poll: u64,
+        /// Do one sweep and exit (for tests)
+        #[arg(long)]
+        once: bool,
+    },
     /// Delete one message of one conversation (Phase 5 write path)
     Delete {
         /// Conversation id, exactly as printed by `teams-cli conversations`
@@ -208,6 +224,8 @@ async fn run(cli: &Cli) -> Result<()> {
             history(conv, *page_size, root.as_deref(), message.as_deref(), raw_out.as_deref()).await
         }
         Some(Command::Send { conv, text, ephemeral }) => send(conv, text, *ephemeral).await,
+        Some(Command::Flush) => flush_outbox().await,
+        Some(Command::Watch { conv, poll, once }) => watch(conv, *poll, *once).await,
         Some(Command::Delete { conv, message }) => delete_message(conv, message).await,
         Some(Command::Roster { raw_out }) => roster(raw_out.as_deref()).await,
         Some(Command::Search { query, limit, raw_out }) => {
@@ -275,7 +293,12 @@ async fn send(conv: &str, text: &str, ephemeral: bool) -> Result<()> {
         .try_into()
         .context("millisecond timestamp does not fit the clientmessageid range")?;
     let content = format!("<div>{}</div>", html_escape_comment(text));
-    let sent = client.send_message(conv, &content, clientmessageid).await?;
+    // Outbox before network: a crash between send and ack re-flushes idempotently on
+    // the next run (the same clientmessageid is the de-dup key on the server).
+    let mut store = teams_store::Store::open(&store_path()).context("opening outbox store")?;
+    store.enqueue_outbox(conv, clientmessageid, &content)?;
+
+    let sent = flush_one(&client, &mut store, conv, clientmessageid, &content).await?;
 
     let Some(message_id) = sent.message_id.as_deref() else {
         anyhow::bail!("service returned no Location header — cannot quote the message id");
@@ -289,6 +312,107 @@ async fn send(conv: &str, text: &str, ephemeral: bool) -> Result<()> {
         println!("ephemeral: deleted {message_id}");
     }
     Ok(())
+}
+
+/// Send one outbox-ready message; keeps the retry bookkeeping honest either way.
+async fn flush_one(
+    client: &teams_api::ChatClient,
+    store: &mut teams_store::Store,
+    conv: &str,
+    clientmessageid: i64,
+    content: &str,
+) -> Result<teams_api::SentMessage> {
+    match client.send_message(conv, content, clientmessageid).await {
+        Ok(sent) => {
+            store.mark_outbox_sent(clientmessageid, sent.message_id.as_deref())?;
+            Ok(sent)
+        }
+        Err(err) => {
+            let error = err.to_string();
+            store.mark_outbox_failed(clientmessageid, &error)?;
+            Err(err).context("sending")
+        }
+    }
+}
+
+/// `$XDG_STATE_HOME/teams-rs/store.sqlite3` (same base rules as the token cache).
+fn store_path() -> std::path::PathBuf {
+    use std::path::{Path, PathBuf};
+
+    let base = match std::env::var_os("XDG_STATE_HOME") {
+        Some(dir) if !dir.is_empty() && Path::new(&dir).is_absolute() => PathBuf::from(dir),
+        _ => std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home.to_string_lossy().into_owned()).join(".local/state"))
+            .expect("neither XDG_STATE_HOME nor HOME is set"),
+    };
+    base.join("teams-rs").join("store.sqlite3")
+}
+
+/// `teams-cli flush` — retry everything pending in the outbox (oldest first).
+async fn flush_outbox() -> Result<()> {
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
+    let client = teams_api::ChatClient::from_session(session)?
+        .with_refresher(teams_api::AuthzRefresher::new()?);
+    let mut store = teams_store::Store::open(&store_path())?;
+
+    for entry in store.pending_outbox()? {
+        println!(
+            "flushing id={} conv={} attempts={}",
+            entry.clientmessageid, entry.conv_id, entry.attempts
+        );
+        flush_one(&client, &mut store, &entry.conv_id, entry.clientmessageid, &entry.content)
+            .await
+            .context("flushing outbox entry")?;
+    }
+    println!("outbox drained");
+    Ok(())
+}
+
+/// `teams-cli watch --conv <id>` — cheap polling sweep of the messages feed, caching
+/// what it sees (store as a read-through cache). New (unseen) message ids print once.
+async fn watch(conv: &str, poll_seconds: u64, once: bool) -> Result<()> {
+    let cache = TokenCache::load()?.context("not signed in — run `teams-cli auth login`")?;
+    let session = cache.authz.as_ref().context("no authz session — run `teams-cli auth authz`")?;
+    let client = teams_api::ChatClient::from_session(session)?
+        .with_refresher(teams_api::AuthzRefresher::new()?);
+    let mut store = teams_store::Store::open(&store_path())?;
+
+    let mut seen = std::collections::HashSet::<String>::new();
+    // Rest before starting: msgs already cached from previous runs count as seen.
+    for old in store.messages(conv, 100)? {
+        seen.insert(old.id.clone());
+    }
+
+    loop {
+        let page = client.list_messages(conv, 10).await.context("listing messages")?;
+        for message in page.messages.iter().rev() {
+            if message.id.is_empty() || !seen.insert(message.id.clone()) {
+                continue;
+            }
+            store.put_message(message)?;
+            store.put_user(message)?;
+            if let Some(emotions) =
+                message.properties.emotions.as_ref().or(message.properties.delta_emotions.as_ref())
+            {
+                store.put_reactions(message, emotions)?;
+            }
+            println!(
+                "msg id={} type={} kind={:?}",
+                message.id,
+                message.message_type.as_deref().unwrap_or("-"),
+                teams_realtime::TeamEvent::from_message_json(
+                    &serde_json::to_value(message).expect("serializable")
+                )
+                .discriminant_label(),
+            );
+        }
+        if once {
+            println!("once: done");
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(poll_seconds.max(1))).await;
+    }
 }
 
 /// `teams-cli delete --conv <id> --message <id>` — soft-delete a message.
