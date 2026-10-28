@@ -7,10 +7,30 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # Unmaintained (not vulnerable) transitive crates of the iced/winit/zbus chains;
+    # each has no maintainer fix to upgrade to as of 2026-10-29:
+    # - paste (RUSTSEC-2024-0436): via ravif/image → iced's `image` feature.
+    # - ttf-parser (RUSTSEC-2026-0192): via sctk-adwaita → winit → iced_winit.
+    # - zbus_names/zvariant/zvariant_derive (RUSTSEC-2026-0370..0372): required by
+    #   zbus v6, which was picked when the v5 chain was flagged; the whole zbus 6
+    #   stack carries the unmaintained marker today.
+    "RUSTSEC-2024-0436",
+    "RUSTSEC-2026-0192",
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
 
 [licenses]
 version = 2
 allow = [
+    # Permissive licenses pulled in by the iced/wgpu/av-graphics stack (Phase 6):
+    # BSD-2-Clause (tiny-skia/av1 chain), BSL-1.0 (clipboard-win), CC0-1.0
+    # (hexf-parse/v_frame), and the NCSA pair expression (libfuzzer-sys).
+    "BSD-2-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
     "MIT",
     "Apache-2.0",
     "BSD-3-Clause",
@@ -22,6 +42,15 @@ allow = [
     "Unlicense",
 ]
 confidence-threshold = 0.8
+
+# This cargo-deny version can't parse compound SPDX (parenthesized OR/AND), and
+# libfuzzer-sys declares `(MIT OR Apache-2.0) AND NCSA` — the NCSA clause is the
+# third-party libpng-rs-style embedded component; the crate itself is MIT OR
+# Apache-2.0 (crate statement). Clarify so the parser sees a simple expression.
+[[licenses.clarify]]
+name = "libfuzzer-sys"
+expression = "MIT OR Apache-2.0"
+license-files = []
 
 [bans]
 multiple-versions = "warn"
