@@ -154,20 +154,97 @@ impl Store {
         Ok(())
     }
 
-    /// Cache one decoded wire message (full object kept, casing preserved).
+    /// Record one sender identity from a wire message (`users` cache).
     ///
-    /// Idempotent on (id, conv) — an update (edit/delete/reaction) rewrites the raw
-    /// snapshot and the derived columns. Arrival is read from the message's
-    /// `originalarrivaltime` when present; it is a timestamp *string* on the wire, so
-    /// numeric-looking values are stored as ms epoch for ordering and anything else
-    /// stays unindexed (`NULL`).
+    /// The MRI is the key; display names are **never** authoritative here
+    /// (`imdisplayname` is the feed-render hint). Unknown-data tolerance: a message
+    /// without `from` writes nothing.
     ///
     /// # Errors
     ///
-    /// [`StoreError::Json`] on a non-serializable payload, [`StoreError::Sqlite`].
+    /// [`StoreError::Sqlite`].
+    pub fn put_user(&mut self, message: &teams_protocol::Message) -> Result<(), StoreError> {
+        let Some(mri) = message.from.as_ref() else { return Ok(()) };
+        self.conn.execute(
+            "INSERT INTO users (mri, display) VALUES (?1, ?2)
+             ON CONFLICT(mri) DO UPDATE SET display = COALESCE(excluded.display, users.display)",
+            rusqlite::params![mri, message.im_display_name],
+        )?;
+        // Keep the extra properties bag snapshot for users that carry one.
+        if let Ok(raw) = serde_json::to_string(message) {
+            self.conn.execute(
+                "UPDATE users SET raw = ?2 WHERE mri = ?1 AND raw IS NULL",
+                rusqlite::params![mri, raw],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Replace the reactions of one message with a decoded emotions payload
+    /// (`[{key, users:[{mri,time,value}]}]`); unparseable entries are skipped.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::Json`] on malformed payloads, [`StoreError::Sqlite`].
+    pub fn put_reactions(
+        &mut self,
+        message: &teams_protocol::Message,
+        emotions: &Value,
+    ) -> Result<(), StoreError> {
+        let Some(entries) = emotions.as_array() else {
+            // Shape drift (stringified JSON, object, …) — degrade, keep nothing stale.
+            return Ok(());
+        };
+        if message.conversation_id.is_none() || message.id.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM reactions WHERE message_id = ?1 AND conv_id = ?2",
+            rusqlite::params![message.id, message.conversation_id],
+        )?;
+        for entry in entries {
+            let Some(key) = entry.get("key").and_then(Value::as_str) else { continue };
+            let Some(users) = entry.get("users").and_then(Value::as_array) else { continue };
+            for user in users {
+                let Some(mri) = user.get("mri").and_then(Value::as_str) else { continue };
+                tx.execute(
+                    "INSERT OR IGNORE INTO reactions
+                     (message_id, conv_id, user_mri, key, time_ms, value)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![
+                        message.id,
+                        message.conversation_id,
+                        mri,
+                        key,
+                        user.get("time").and_then(Value::as_i64),
+                        user.get("value").and_then(Value::as_str),
+                    ],
+                )?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Count of a reaction key on one message (quick truth for the message list).
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::Sqlite`].
+    pub fn reaction_count(&self, message_id: &str, key: &str) -> Result<u32, StoreError> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM reactions WHERE message_id = ?1 AND key = ?2",
+            rusqlite::params![message_id, key],
+            |row| row.get::<_, i64>(0),
+        )?;
+        u32::try_from(count).map_err(|_| StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+    }
+
+    /// Cache one decoded wire message (full object kept, casing preserved).
     pub fn put_message(&mut self, message: &teams_protocol::Message) -> Result<(), StoreError> {
         let raw = serde_json::to_string(message)?;
-        let arrival_ms = message.original_arrival_time.as_deref().and_then(hermes_epoch_ms);
+        let arrival_ms = message.original_arrival_time.as_deref().and_then(parse_ms_epoch);
         let conv_id = message.conversation_id.clone().unwrap_or_default();
         self.conn.execute(
             r"INSERT INTO messages (id, conv_id, clientmsg_id, arrival_ms, message_type,
@@ -373,9 +450,9 @@ fn now_ms() -> i64 {
         .map_or(0, |duration| duration.as_millis().try_into().unwrap_or(i64::MAX))
 }
 
-/// A timestamp string ("1793085256125" ms epoch / RFC-3339) to a strict ms epoch, only
+/// A timestamp string ("1793085256125" ms epoch) to a strict ms epoch, digits only,
 /// for all-digit values; anything else becomes `None` (unsortable in the cache).
-fn hermes_epoch_ms(timestamp: &str) -> Option<i64> {
+fn parse_ms_epoch(timestamp: &str) -> Option<i64> {
     let trimmed = timestamp.trim();
     if trimmed.is_empty() || !trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
@@ -455,6 +532,46 @@ mod tests {
     }
 
     #[test]
+    fn users_and_reactions_cache() -> Result<(), StoreError> {
+        use serde_json::json;
+        let mut store = Store::in_memory()?;
+        let msg = message_fixture("2000", "48:notifications", "hello");
+        // put a sender
+        let msg = {
+            let mut m = msg;
+            m.from = Some("8:orgid:REDACTED".to_owned());
+            m.im_display_name = Some("Display Hint".to_owned());
+            m
+        };
+        store.put_user(&msg)?;
+        let displays = store.conn.query_row("SELECT display, mri FROM users", [], |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+        })?;
+        assert_eq!(displays, (Some("Display Hint".to_owned()), "8:orgid:REDACTED".to_owned()));
+
+        // reactions replace-on-write
+        let emotions = json!([
+            { "key": "like", "users": [
+                { "mri": "8:orgid:AAA", "time": 1_793_207_000_000i64, "value": "1" },
+                { "mri": "8:orgid:BBB", "time": 1_793_207_050_000i64 },
+            ]},
+        ]);
+        store.put_reactions(&msg, &emotions)?;
+        assert_eq!(store.reaction_count("2000", "like")?, 2);
+        assert_eq!(store.reaction_count("2000", "heart")?, 0);
+        // Second write with one fewer user replaces (no stale rows).
+        store.put_reactions(
+            &msg,
+            &json!([{ "key": "like", "users": [ { "mri": "8:orgid:AAA" } ]}]),
+        )?;
+        assert_eq!(store.reaction_count("2000", "like")?, 1);
+        // Shape drift degrades silently.
+        store.put_reactions(&msg, &json!("not-an-array"))?;
+        assert_eq!(store.reaction_count("2000", "like")?, 1);
+        Ok(())
+    }
+
+    #[test]
     fn cursor_roundtrip() -> Result<(), StoreError> {
         let mut store = Store::in_memory()?;
         assert_eq!(store.get_cursor("longpoll")?, None);
@@ -512,8 +629,8 @@ mod tests {
 
     #[test]
     fn epoch_parsing_is_strict_digits() {
-        assert_eq!(hermes_epoch_ms("1793085256125"), Some(1_793_085_256_125));
-        assert_eq!(hermes_epoch_ms("2026-10-27T04:34:16.125Z"), None);
-        assert_eq!(hermes_epoch_ms(""), None);
+        assert_eq!(parse_ms_epoch("1793085256125"), Some(1_793_085_256_125));
+        assert_eq!(parse_ms_epoch("2026-10-27T04:34:16.125Z"), None);
+        assert_eq!(parse_ms_epoch(""), None);
     }
 }
