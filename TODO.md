@@ -350,8 +350,9 @@ snapshot tests ✅ (2026-10-28). **Phase 4 item checklist is fully closed.**
             edit), delete, react, mark-as-read (`isread` per message +
             `consumptionhorizon` conversation cursor)
       - [ ] typing indicator done; presence (`presenceDocs/messagingService`) still ⬜
-- [ ] `teams-store`: SQLite schema + migrations
-      (`conversations`, `messages`, `users`, `reactions`, `sync_cursor`, `pending_outbox`).
+- [~] `teams-store`: SQLite schema + migrations (v1 landed: `conversations`, `messages`,
+      `users`, `reactions`, `sync_cursor`, `pending_outbox` + message-cache/outbox API).
+      `users`/`reactions` writers still to wire (decoder only reads them today).
 - [ ] **Outbox**: optimistic UI inserts + idempotent retry of unsent messages on reconnect.
 - [ ] Integration tests gated behind `TEAMS_TEST_TOKENS` env variable (ignored by default).
 
